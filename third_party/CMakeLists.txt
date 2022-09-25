@@ -1,0 +1,5 @@
+add_subdirectory(glfw)
+add_subdirectory(tinyobjloader)
+add_subdirectory(glm)
+include(stb.cmake)
+include(imgui.cmake)
