@@ -19,6 +19,7 @@
 #include <optional>
 
 #include "app/Model.h"
+#include "app/ShaderProgram.h"
 
 class VulkanObject {
 public:
@@ -97,18 +98,17 @@ private:
     std::vector<VkFramebuffer> imgui_frame_buffers;
 
     VkFramebuffer geometryFrameBuffer;
-
-    VkDescriptorSetLayout lightingSetLayout;
-    VkDescriptorSetLayout shadowSetLayout;
 	
     // render pass object
     VkRenderPass renderPass;
     VkRenderPass geometryPass;
     VkRenderPass imgui_render_pass;
-    VkDescriptorSetLayout descriptorSetLayout;
-    VkPipelineLayout pipelineLayout;
-    VkPipelineLayout lightingLayout;
-    VkPipelineLayout shadowLayout;
+    //VkDescriptorSetLayout descriptorSetLayout;
+    //VkDescriptorSetLayout lightingSetLayout;
+    //VkDescriptorSetLayout shadowSetLayout;
+    std::shared_ptr<mc::ShaderProgram> geometryProgram;
+    std::shared_ptr<mc::ShaderProgram> lightingProgram;
+    std::shared_ptr<mc::ShaderProgram> shadowProgram;
     VkPipeline graphicsPipeline;
     VkPipeline lightingPipeline;
     VkPipeline shadowPipeline;
@@ -144,7 +144,7 @@ private:
     VkDeviceMemory SSBOMemory;
 
     struct ModelTransforms {
-        std::array<glm::mat4, 1000> modelMatricies{};
+        std::array<glm::mat4, 100> modelMatricies{};
     };
 
     void createSSBOs();
@@ -223,8 +223,6 @@ private:
     void createDescriptorPool();
 
     void createUniformBuffers();
-
-    void createDescriptorSetLayout();
 
     void createIndexBuffer();
 

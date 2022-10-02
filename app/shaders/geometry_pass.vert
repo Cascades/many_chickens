@@ -27,7 +27,7 @@ layout(std140, binding = 0) uniform UniformBufferObject {
 
 layout(std140, binding = 2) readonly buffer ModelTranformsBuffer
 {
-	mat4 data[1000];
+	mat4 data[];
 } modelTranformsBuffer;
 
 layout(location = 0) in vec3 inPosition;

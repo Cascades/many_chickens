@@ -35,6 +35,9 @@
 #include <imgui_impl_vulkan.h>
 
 #include "app/Model.h"
+#include "app/DescriptorInfo.h"
+#include "app/Shader.h"
+#include "app/ShaderProgram.h"
 
 // vector of validation layers to be used.
 
@@ -141,7 +144,6 @@ void VulkanObject::initVulkan(GLFWwindow* window) {
     createImageViews();
     // create render pass object using previous information
     createRenderPass();
-    createDescriptorSetLayout();
     // create graphics pipeline
     createGraphicsPipeline();
     // create our command pool
@@ -480,113 +482,6 @@ void VulkanObject::createSSBOs() {
     createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, SSBO, SSBOMemory);
 }
 
-void VulkanObject::createDescriptorSetLayout() {
-    VkDescriptorSetLayoutBinding uboLayoutBinding{};
-    uboLayoutBinding.binding = 0;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    uboLayoutBinding.pImmutableSamplers = nullptr;
-
-    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-    samplerLayoutBinding.binding = 1;
-    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerLayoutBinding.descriptorCount = 1;
-    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    samplerLayoutBinding.pImmutableSamplers = nullptr;
-
-    VkDescriptorSetLayoutBinding ssboLayoutBinding{};
-    ssboLayoutBinding.binding = 2;
-    ssboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    ssboLayoutBinding.descriptorCount = 1;
-    ssboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    ssboLayoutBinding.pImmutableSamplers = nullptr;
-
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings = { uboLayoutBinding, samplerLayoutBinding, ssboLayoutBinding };
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor set layout!");
-    }
-
-    VkDescriptorSetLayoutBinding lightingUboLayoutBinding{};
-    lightingUboLayoutBinding.binding = 0;
-    lightingUboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    lightingUboLayoutBinding.descriptorCount = 1;
-    lightingUboLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    lightingUboLayoutBinding.pImmutableSamplers = nullptr;
-	
-    VkDescriptorSetLayoutBinding colorInputLayoutBinding0{};
-    colorInputLayoutBinding0.binding = 1;
-    colorInputLayoutBinding0.descriptorCount = 1;
-    colorInputLayoutBinding0.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    colorInputLayoutBinding0.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding colorInputLayoutBinding1{};
-    colorInputLayoutBinding1.binding = 2;
-    colorInputLayoutBinding1.descriptorCount = 1;
-    colorInputLayoutBinding1.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    colorInputLayoutBinding1.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding depthInputLayoutBinding1{};
-    depthInputLayoutBinding1.binding = 4;
-    depthInputLayoutBinding1.descriptorCount = 1;
-    depthInputLayoutBinding1.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    depthInputLayoutBinding1.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding shadowSamplerLayoutBinding{};
-    shadowSamplerLayoutBinding.binding = 5;
-    shadowSamplerLayoutBinding.descriptorCount = 1;
-    shadowSamplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    shadowSamplerLayoutBinding.pImmutableSamplers = nullptr;
-    shadowSamplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding PCFshadowSamplerLayoutBinding{};
-    PCFshadowSamplerLayoutBinding.binding = 6;
-    PCFshadowSamplerLayoutBinding.descriptorCount = 1;
-    PCFshadowSamplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    PCFshadowSamplerLayoutBinding.pImmutableSamplers = nullptr;
-    PCFshadowSamplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 6> lightingBindings = {
-    	lightingUboLayoutBinding,
-    	colorInputLayoutBinding0,
-    	colorInputLayoutBinding1,
-    	depthInputLayoutBinding1,
-    	shadowSamplerLayoutBinding,
-        PCFshadowSamplerLayoutBinding
-    };
-    VkDescriptorSetLayoutCreateInfo lightingLayoutInfo{};
-    lightingLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    lightingLayoutInfo.bindingCount = static_cast<uint32_t>(lightingBindings.size());
-    lightingLayoutInfo.pBindings = lightingBindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &lightingLayoutInfo, nullptr, &lightingSetLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor set layout!");
-    }
-
-    VkDescriptorSetLayoutBinding shadowUboLayoutBinding{};
-    shadowUboLayoutBinding.binding = 0;
-    shadowUboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    shadowUboLayoutBinding.descriptorCount = 1;
-    shadowUboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    shadowUboLayoutBinding.pImmutableSamplers = nullptr;
-
-    std::array<VkDescriptorSetLayoutBinding, 1> shadowBindings = { shadowUboLayoutBinding };
-    VkDescriptorSetLayoutCreateInfo shadowLayoutInfo{};
-    shadowLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    shadowLayoutInfo.bindingCount = static_cast<uint32_t>(shadowBindings.size());
-    shadowLayoutInfo.pBindings = shadowBindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &shadowLayoutInfo, nullptr, &shadowSetLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor set layout!");
-    }
-    
-}
-
 void VulkanObject::createIndexBuffer() {
     VkDeviceSize bufferSize = sizeof(dragon_model.getIndices()[0]) * dragon_model.getIndices().size();
 
@@ -827,8 +722,6 @@ void VulkanObject::cleanupSwapChain() {
 
     //destroy pipeline
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
-    // destroy pipeline layout
-    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     // destroy render pass resources
     vkDestroyRenderPass(device, imgui_render_pass, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
@@ -878,9 +771,11 @@ void VulkanObject::cleanup() {
 
     vkDestroyFramebuffer(device, geometryFrameBuffer, nullptr);
 
-    vkDestroyDescriptorSetLayout(device, lightingSetLayout, nullptr);
+    lightingProgram.reset();
+    geometryProgram.reset();
+    shadowProgram.reset();
+
     vkDestroyRenderPass(device, geometryPass, nullptr);
-    vkDestroyPipelineLayout(device, lightingLayout, nullptr);
     vkDestroyPipeline(device, lightingPipeline, nullptr);
 
     vkDestroyDescriptorPool(device, lightingDescriptorPool, nullptr);
@@ -891,8 +786,6 @@ void VulkanObject::cleanup() {
 
     vkDestroyImage(device, textureImage, nullptr);
     vkFreeMemory(device, textureImageMemory, nullptr);
-
-    vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
     vkDestroyBuffer(device, indexBuffer, nullptr);
     vkFreeMemory(device, indexBufferMemory, nullptr);
@@ -1677,7 +1570,7 @@ void VulkanObject::recreateSwapChain() {
 }
 
 void VulkanObject::createDescriptorSets() {
-    std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
+    std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), geometryProgram->getSetLayout());
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = descriptorPool;
@@ -1689,7 +1582,7 @@ void VulkanObject::createDescriptorSets() {
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 
-    std::vector<VkDescriptorSetLayout> lightingLayouts(swapChainImages.size(), lightingSetLayout);
+    std::vector<VkDescriptorSetLayout> lightingLayouts(swapChainImages.size(), lightingProgram->getSetLayout());
     VkDescriptorSetAllocateInfo lightingAllocInfo{};
     lightingAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     lightingAllocInfo.descriptorPool = lightingDescriptorPool;
@@ -1701,7 +1594,7 @@ void VulkanObject::createDescriptorSets() {
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 
-    std::vector<VkDescriptorSetLayout> shadowLayouts(swapChainImages.size(), shadowSetLayout);
+    std::vector<VkDescriptorSetLayout> shadowLayouts(swapChainImages.size(), shadowProgram->getSetLayout());
     VkDescriptorSetAllocateInfo shadowAllocInfo{};
     shadowAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     shadowAllocInfo.descriptorPool = shadowDescriptorPool;
@@ -1714,50 +1607,47 @@ void VulkanObject::createDescriptorSets() {
     }
 
     for (size_t i = 0; i < swapChainImages.size(); i++) {
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObject);
+        mc::DescriptorInfo<VkDescriptorBufferInfo> uboInfo{
+            uniformBuffers[i],
+            0,
+            sizeof(UniformBufferObject)};
 
-        VkDescriptorBufferInfo ssboInfo{};
-        ssboInfo.buffer = SSBO;
-        ssboInfo.offset = 0;
-        ssboInfo.range = sizeof(ModelTransforms);
+        mc::DescriptorInfo<VkDescriptorBufferInfo> ssboInfo{
+            SSBO,
+            0,
+            sizeof(ModelTransforms)};
 
-        VkDescriptorBufferInfo shadowBufferInfo{};
-        shadowBufferInfo.buffer = shadowUniformBuffers[i];
-        shadowBufferInfo.offset = 0;
-        shadowBufferInfo.range = sizeof(ShadowUniformBufferObject);
+        mc::DescriptorInfo<VkDescriptorBufferInfo> shadowBufferInfo{
+            shadowUniformBuffers[i],
+            0,
+            sizeof(ShadowUniformBufferObject)};
 
-        VkDescriptorImageInfo shadowImageInfo{};
-        shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        shadowImageInfo.imageView = shadowPass.depth.view;
-        shadowImageInfo.sampler = shadowPass.sampler;
+        mc::DescriptorInfo<VkDescriptorImageInfo> shadowImageInfo{
+            shadowPass.sampler,
+            shadowPass.depth.view,
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL };
 
-        VkDescriptorImageInfo PCFShadowImageInfo{};
-        PCFShadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        PCFShadowImageInfo.imageView = shadowPass.depth.view;
-        PCFShadowImageInfo.sampler = shadowPass.pcfsampler;
+        mc::DescriptorInfo<VkDescriptorImageInfo> PCFShadowImageInfo{
+            shadowPass.pcfsampler,
+            shadowPass.depth.view,
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
 
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = textureImageView;
-        imageInfo.sampler = textureSampler;
+        mc::DescriptorInfo<VkDescriptorImageInfo> imageInfo{
+            textureSampler,
+            textureImageView,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
-        VkDescriptorImageInfo colorDescriptorInfo{};
-        colorDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        colorDescriptorInfo.imageView = offScreenPass.albedo.view;
-        colorDescriptorInfo.sampler = VK_NULL_HANDLE;
+        mc::DescriptorInfo<VkDescriptorImageInfo> colorDescriptorInfo{
+            offScreenPass.albedo.view,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
-        VkDescriptorImageInfo normalDescriptorInfo{};
-        normalDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        normalDescriptorInfo.imageView = offScreenPass.normal.view;
-        normalDescriptorInfo.sampler = VK_NULL_HANDLE;
+        mc::DescriptorInfo<VkDescriptorImageInfo> normalDescriptorInfo{
+            offScreenPass.normal.view,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
-        VkDescriptorImageInfo depthDescriptorInfo{};
-        depthDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        depthDescriptorInfo.imageView = offScreenPass.depth.view;
-        depthDescriptorInfo.sampler = VK_NULL_HANDLE;
+        mc::DescriptorInfo<VkDescriptorImageInfo> depthDescriptorInfo{
+            offScreenPass.depth.view,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
         std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
@@ -1767,7 +1657,7 @@ void VulkanObject::createDescriptorSets() {
         descriptorWrites[0].dstArrayElement = 0;
         descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &bufferInfo;
+        descriptorWrites[0].pBufferInfo = uboInfo.getPtr();
 
         descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[1].dstSet = descriptorSets[i];
@@ -1775,7 +1665,7 @@ void VulkanObject::createDescriptorSets() {
         descriptorWrites[1].dstArrayElement = 0;
         descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &imageInfo;
+        descriptorWrites[1].pImageInfo = imageInfo.getPtr();
 
         descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[2].dstSet = descriptorSets[i];
@@ -1783,7 +1673,7 @@ void VulkanObject::createDescriptorSets() {
         descriptorWrites[2].dstArrayElement = 0;
         descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         descriptorWrites[2].descriptorCount = 1;
-        descriptorWrites[2].pBufferInfo = &ssboInfo;
+        descriptorWrites[2].pBufferInfo = ssboInfo.getPtr();
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
@@ -1795,28 +1685,28 @@ void VulkanObject::createDescriptorSets() {
         lightingDescriptorWrites[0].dstArrayElement = 0;
         lightingDescriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         lightingDescriptorWrites[0].descriptorCount = 1;
-        lightingDescriptorWrites[0].pBufferInfo = &bufferInfo;
+        lightingDescriptorWrites[0].pBufferInfo = uboInfo.getPtr();
 
         lightingDescriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         lightingDescriptorWrites[1].dstSet = lightingDescriptorSets[i];
         lightingDescriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         lightingDescriptorWrites[1].descriptorCount = 1;
         lightingDescriptorWrites[1].dstBinding = 1;
-        lightingDescriptorWrites[1].pImageInfo = &colorDescriptorInfo;
+        lightingDescriptorWrites[1].pImageInfo = colorDescriptorInfo.getPtr();
 
         lightingDescriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         lightingDescriptorWrites[2].dstSet = lightingDescriptorSets[i];
         lightingDescriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         lightingDescriptorWrites[2].descriptorCount = 1;
         lightingDescriptorWrites[2].dstBinding = 2;
-        lightingDescriptorWrites[2].pImageInfo = &normalDescriptorInfo;
+        lightingDescriptorWrites[2].pImageInfo = normalDescriptorInfo.getPtr();
 
         lightingDescriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         lightingDescriptorWrites[3].dstSet = lightingDescriptorSets[i];
         lightingDescriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         lightingDescriptorWrites[3].descriptorCount = 1;
         lightingDescriptorWrites[3].dstBinding = 4;
-        lightingDescriptorWrites[3].pImageInfo = &depthDescriptorInfo;
+        lightingDescriptorWrites[3].pImageInfo = depthDescriptorInfo.getPtr();
 
         lightingDescriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         lightingDescriptorWrites[4].dstSet = lightingDescriptorSets[i];
@@ -1824,7 +1714,7 @@ void VulkanObject::createDescriptorSets() {
         lightingDescriptorWrites[4].dstArrayElement = 0;
         lightingDescriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         lightingDescriptorWrites[4].descriptorCount = 1;
-        lightingDescriptorWrites[4].pImageInfo = &shadowImageInfo;
+        lightingDescriptorWrites[4].pImageInfo = shadowImageInfo.getPtr();
 
         lightingDescriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         lightingDescriptorWrites[5].dstSet = lightingDescriptorSets[i];
@@ -1832,7 +1722,7 @@ void VulkanObject::createDescriptorSets() {
         lightingDescriptorWrites[5].dstArrayElement = 0;
         lightingDescriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         lightingDescriptorWrites[5].descriptorCount = 1;
-        lightingDescriptorWrites[5].pImageInfo = &PCFShadowImageInfo;
+        lightingDescriptorWrites[5].pImageInfo = PCFShadowImageInfo.getPtr();
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(lightingDescriptorWrites.size()), lightingDescriptorWrites.data(), 0, nullptr);
 
@@ -1844,7 +1734,7 @@ void VulkanObject::createDescriptorSets() {
         shadowDescriptorWrites[0].dstArrayElement = 0;
         shadowDescriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         shadowDescriptorWrites[0].descriptorCount = 1;
-        shadowDescriptorWrites[0].pBufferInfo = &shadowBufferInfo;
+        shadowDescriptorWrites[0].pBufferInfo = shadowBufferInfo.getPtr();
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(shadowDescriptorWrites.size()), shadowDescriptorWrites.data(), 0, nullptr);
     }
@@ -1852,13 +1742,10 @@ void VulkanObject::createDescriptorSets() {
 
 // create the graphics pipeline.
 void VulkanObject::createGraphicsPipeline() {
-    // read in our compiled SPIR-V shaders
-    auto vertShaderCode = readFile("../shaders/vulkan3/geometry_pass_vert.spv");
-    auto fragShaderCode = readFile("../shaders/vulkan3/geometry_pass_frag.spv");
-
     // create shader module per shader
-    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
-    VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+    auto geometryVertShaderModule = std::make_shared< mc::Shader>(device, "../shaders/vulkan3/geometry_pass_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+    auto geometryFragShaderModule = std::make_shared< mc::Shader>(device, "../shaders/vulkan3/geometry_pass_frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    geometryProgram = std::make_shared<mc::ShaderProgram>(device, mc::Shaders{geometryVertShaderModule, geometryFragShaderModule});
 
     // create a shader stage info struct for the vertex shader
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
@@ -1867,7 +1754,7 @@ void VulkanObject::createGraphicsPipeline() {
     // assign vertex shader to it's stage
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
     // add the shader code
-    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.module = geometryVertShaderModule->get();
     // add standard name
     vertShaderStageInfo.pName = "main";
 
@@ -1878,7 +1765,7 @@ void VulkanObject::createGraphicsPipeline() {
     // assign fragment shader to it's stage
     fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     // add the shader code
-    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.module = geometryFragShaderModule->get();
     // add standard name
     fragShaderStageInfo.pName = "main";
 
@@ -1997,22 +1884,6 @@ void VulkanObject::createGraphicsPipeline() {
     colorBlending.blendConstants[2] = 0.0f;
     colorBlending.blendConstants[3] = 0.0f;
 
-    // zero initialise pipeline layout struct
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    // set type
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    // set number of layouts
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-    // number of dynamic values that can be pushed ot shader
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-
-    // create pipeline layout and if failed
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
-        // throw error
-        throw std::runtime_error("failed to create pipeline layout!");
-    }
-
     // create pipeline info struct
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     // assign type
@@ -2034,7 +1905,7 @@ void VulkanObject::createGraphicsPipeline() {
     // assign colour blend info
     pipelineInfo.pColorBlendState = &colorBlending;
     // assign layout (for passing uniforms)
-    pipelineInfo.layout = pipelineLayout;
+    pipelineInfo.layout = geometryProgram->getLayout();
     // assign renderpass
     pipelineInfo.renderPass = geometryPass;
     // number of subpasses
@@ -2073,44 +1944,27 @@ void VulkanObject::createGraphicsPipeline() {
     // we consider vertex order to be clockwise and front facing
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
-    pipelineLayoutInfo.pSetLayouts = &lightingSetLayout;
-
     // number of attachments
     colorBlending.attachmentCount = 1;
     // set as previously defined attachment
     colorBlending.pAttachments = &colorBlendAttachments[0];
 
-    // create pipeline layout and if failed
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &lightingLayout) != VK_SUCCESS) {
-        // throw error
-        throw std::runtime_error("failed to create pipeline layout!");
-    }
-
-    // destroy shader modules (they are elsewhere now)
-    vkDestroyShaderModule(device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(device, vertShaderModule, nullptr);
-
-    vertShaderCode = std::vector<char>{};
-    fragShaderCode = std::vector<char>{};
-	
-    vertShaderCode = readFile("../shaders/vulkan3/lighting_pass_vert.spv");
-    fragShaderCode = readFile("../shaders/vulkan3/lighting_pass_frag.spv");
-
     // create shader module per shader
-    auto lightingVertShaderModule = createShaderModule(vertShaderCode);
-    auto lightingFragShaderModule = createShaderModule(fragShaderCode);
+    auto lightingVertShaderModule = std::make_shared< mc::Shader>(device, "../shaders/vulkan3/lighting_pass_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+    auto lightingFragShaderModule = std::make_shared< mc::Shader>(device, "../shaders/vulkan3/lighting_pass_frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    lightingProgram = std::make_shared<mc::ShaderProgram>(device, mc::Shaders{lightingVertShaderModule, lightingFragShaderModule});
 
     // add the shader code
-    vertShaderStageInfo.module = lightingVertShaderModule;
+    vertShaderStageInfo.module = lightingVertShaderModule->get();
     // add the shader code
-    fragShaderStageInfo.module = lightingFragShaderModule;
+    fragShaderStageInfo.module = lightingFragShaderModule->get();
 
     shaderStages[0] = vertShaderStageInfo;
 	shaderStages[1] = fragShaderStageInfo;
 
     pipelineInfo.pStages = shaderStages;
     // assign layout (for passing uniforms)
-    pipelineInfo.layout = lightingLayout;
+    pipelineInfo.layout = lightingProgram->getLayout();
     // assign renderpass
     pipelineInfo.renderPass = geometryPass;
     // number of subpasses
@@ -2134,9 +1988,6 @@ void VulkanObject::createGraphicsPipeline() {
         throw std::runtime_error("failed to create graphics pipeline!");
     }
 
-    vkDestroyShaderModule(device, lightingVertShaderModule, nullptr);
-    vkDestroyShaderModule(device, lightingFragShaderModule, nullptr);
-
     ///////////////////////////////////////////////////////// shadow
 
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -2153,40 +2004,27 @@ void VulkanObject::createGraphicsPipeline() {
     // we consider vertex order to be clockwise and front facing
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
-    pipelineLayoutInfo.pSetLayouts = &shadowSetLayout;
-
     // number of attachments
     colorBlending.attachmentCount = 0;
     // set as previously defined attachment
     colorBlending.pAttachments = &colorBlendAttachments[0];
 
-    // create pipeline layout and if failed
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &shadowLayout) != VK_SUCCESS) {
-        // throw error
-        throw std::runtime_error("failed to create pipeline layout!");
-    }
-	
-    vertShaderCode = std::vector<char>{};
-    fragShaderCode = std::vector<char>{};
-
-    vertShaderCode = readFile("../shaders/vulkan3/shadow_pass_vert.spv");
-    fragShaderCode = readFile("../shaders/vulkan3/shadow_pass_frag.spv");
-
     // create shader module per shader
-    auto shadowVertShaderModule = createShaderModule(vertShaderCode);
-    auto shadowFragShaderModule = createShaderModule(fragShaderCode);
+    auto shadowVertShaderModule = std::make_shared<mc::Shader>(device, "../shaders/vulkan3/shadow_pass_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+    auto shadowFragShaderModule = std::make_shared<mc::Shader>(device, "../shaders/vulkan3/shadow_pass_frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    shadowProgram = std::make_shared<mc::ShaderProgram>(device, mc::Shaders{shadowVertShaderModule, shadowFragShaderModule});
 
     // add the shader code
-    vertShaderStageInfo.module = shadowVertShaderModule;
+    vertShaderStageInfo.module = shadowVertShaderModule->get();
     // add the shader code
-    fragShaderStageInfo.module = shadowFragShaderModule;
+    fragShaderStageInfo.module = shadowFragShaderModule->get();
 
     shaderStages[0] = vertShaderStageInfo;
     shaderStages[1] = fragShaderStageInfo;
 
     pipelineInfo.pStages = shaderStages;
     // assign layout (for passing uniforms)
-    pipelineInfo.layout = shadowLayout;
+    pipelineInfo.layout = shadowProgram->getLayout();
     // assign renderpass
     pipelineInfo.renderPass = shadowPass.renderPass;
     // number of subpasses
@@ -2209,9 +2047,6 @@ void VulkanObject::createGraphicsPipeline() {
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowPipeline) != VK_SUCCESS) {
         throw std::runtime_error("failed to create graphics pipeline!");
     }
-
-    vkDestroyShaderModule(device, shadowVertShaderModule, nullptr);
-    vkDestroyShaderModule(device, shadowFragShaderModule, nullptr);
 }
 
 // function to create all of our framebuffers
@@ -2370,7 +2205,7 @@ void VulkanObject::createCommandBuffers() {
         vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowLayout, 0, 1, &shadowDescriptorSets[i], 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowProgram->getLayout(), 0, 1, &shadowDescriptorSets[i], 0, nullptr);
 
         vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(dragon_model.getIndices().size()), 1000, 0, 0, 0);
 
@@ -2409,7 +2244,7 @@ void VulkanObject::createCommandBuffers() {
         vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, geometryProgram->getLayout(), 0, 1, &descriptorSets[i], 0, nullptr);
 
         vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(dragon_model.getIndices().size()), 1000, 0, 0, 0);
 
@@ -2417,7 +2252,7 @@ void VulkanObject::createCommandBuffers() {
 
         vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline);
 
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingLayout, 0, 1, &lightingDescriptorSets[i], 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingProgram->getLayout(), 0, 1, &lightingDescriptorSets[i], 0, nullptr);
 
         vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 

@@ -1,16 +1,17 @@
 #pragma once
 
+#include <filesystem>
 #include <fstream>
 
 // read a file in and return it's contents as a std::vector of chars (byte array internally)
-static std::vector<char> readFile(const std::string& filename) {
+static std::vector<char> readFile(const std::filesystem::path& filename) {
     // create stream
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
     // check opening worked
     if (!file.is_open()) {
         // throw error if not
-        throw std::runtime_error("failed to open file: " + filename + "!");
+        throw std::runtime_error("failed to open file: " + filename.string() + "!");
     }
 
     // get filesize
