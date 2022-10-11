@@ -1,6 +1,7 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_KHR_vulkan_glsl : enable
+#extension GL_ARB_shader_draw_parameters: require
 
 layout(std140, binding = 0) uniform UniformBufferObject {
     mat4 model;
@@ -41,8 +42,24 @@ layout(location = 2) out vec2 fragTexCoord;
 layout(location = 3) out float texture_on;
 layout(location = 4) out float specularity;
 
+mat4 rotationMatrix(vec3 axis, float angle)
+{
+    axis = normalize(axis);
+    float s = sin(angle);
+    float c = cos(angle);
+    float oc = 1.0 - c;
+    
+    return mat4(oc * axis.x * axis.x + c,           oc * axis.x * axis.y - axis.z * s,  oc * axis.z * axis.x + axis.y * s,  0.0,
+                oc * axis.x * axis.y + axis.z * s,  oc * axis.y * axis.y + c,           oc * axis.y * axis.z - axis.x * s,  0.0,
+                oc * axis.z * axis.x - axis.y * s,  oc * axis.y * axis.z + axis.x * s,  oc * axis.z * axis.z + c,           0.0,
+                0.0,                                0.0,                                0.0,                                1.0);
+}
+
 void main() {
-    gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[gl_InstanceIndex] * vec4(inPosition, 1.0);
+    // TODO: make the chickens spin!
+    mat4 rotMat = rotationMatrix(normalize(vec3(0.1, 0.2, 0.3)), 25.0);
+
+    gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[gl_DrawIDARB] * rotMat * vec4(inPosition, 1.0);
 
     outNormal = inNormal;
 

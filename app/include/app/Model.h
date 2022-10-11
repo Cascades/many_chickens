@@ -4,10 +4,23 @@
 
 #include "app/Vertex.h"
 
+struct LodConfigData
+{
+    float maxDist;
+    uint32_t offset;
+    uint32_t size;
+    const uint32_t padding = 0;
+};
+
 class Model
 {
+    constexpr static uint32_t total_lod_levels = 5;
+
 	std::vector<Vertex> vertices;
-	std::vector<uint32_t> indices;
+    std::vector<uint32_t> indices;
+    std::vector<uint32_t> lod_indices_offsets;
+    std::vector<uint32_t> lod_indices_sizes;
+    std::vector<float> lod_max_distances;
 
 public:
 
@@ -32,8 +45,46 @@ public:
         return vertices;
 	}
 
-	std::vector<uint32_t> const& getIndices() const
-	{
+    std::vector<uint32_t> const& getIndices() const
+    {
         return indices;
+    }
+
+    constexpr uint32_t getTotalLodLevels() const
+    {
+        return total_lod_levels;
+    }
+
+    std::vector<LodConfigData> getLodConfigData() const
+    {
+        std::vector<LodConfigData> lodConfigDataTempVec;
+
+        for (size_t i = 0; i < total_lod_levels; ++i)
+        {
+            lodConfigDataTempVec.emplace_back(lod_max_distances[i], lod_indices_offsets[i], lod_indices_sizes[i]);
+        }
+
+        return lodConfigDataTempVec;
+    }
+
+    std::vector<float>& getMaxDistances()
+    {
+        return lod_max_distances;
+    }
+
+    template<size_t lod_level>
+    uint32_t getIndicesOffset() const
+	{
+        //return lod_indices[lod_level];
+        return lod_indices_offsets[total_lod_levels - 1];
 	}
+
+    template<size_t lod_level>
+    uint32_t const& getIndicesSize() const
+    {
+        //return lod_indices[lod_level];
+        return lod_indices_sizes[total_lod_levels - 1];
+    }
+private:
+    void generateLOD();
 };

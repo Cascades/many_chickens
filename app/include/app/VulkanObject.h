@@ -106,9 +106,11 @@ private:
     //VkDescriptorSetLayout descriptorSetLayout;
     //VkDescriptorSetLayout lightingSetLayout;
     //VkDescriptorSetLayout shadowSetLayout;
+    std::shared_ptr<mc::ShaderProgram> computeProgram;
     std::shared_ptr<mc::ShaderProgram> geometryProgram;
     std::shared_ptr<mc::ShaderProgram> lightingProgram;
     std::shared_ptr<mc::ShaderProgram> shadowProgram;
+    VkPipeline computePipeline;
     VkPipeline graphicsPipeline;
     VkPipeline lightingPipeline;
     VkPipeline shadowPipeline;
@@ -142,10 +144,16 @@ private:
 
     VkBuffer SSBO;
     VkDeviceMemory SSBOMemory;
+    std::vector<VkBuffer> indirectLodSSBO;
+    std::vector<VkDeviceMemory> indirectLodSSBOMemory;
+    std::vector<VkBuffer> lodConfigSSBO;
+    std::vector<VkDeviceMemory> lodConfigSSBOMemory;
 
     struct ModelTransforms {
-        std::array<glm::mat4, 100> modelMatricies{};
+        std::array<glm::mat4, 10000> modelMatricies{};
     };
+
+    std::unique_ptr<ModelTransforms> modelTransforms;
 
     void createSSBOs();
 
@@ -155,9 +163,11 @@ private:
     std::vector<VkBuffer> shadowUniformBuffers;
     std::vector<VkDeviceMemory> shadowUniformBuffersMemory;
 
+    VkDescriptorPool computeDescriptorPool;
     VkDescriptorPool descriptorPool;
     VkDescriptorPool lightingDescriptorPool;
     VkDescriptorPool shadowDescriptorPool;
+    std::vector<VkDescriptorSet> computeDescriptorSets;
     std::vector<VkDescriptorSet> descriptorSets;
     std::vector<VkDescriptorSet> lightingDescriptorSets;
     std::vector<VkDescriptorSet> shadowDescriptorSets;
@@ -278,6 +288,8 @@ private:
 
     void createDescriptorSets();
 
+    void createComputePipeline();
+
     // create the graphics pipeline.
     void createGraphicsPipeline();
 
@@ -295,6 +307,8 @@ private:
     void updateUniformBuffer(uint32_t currentImage);
 
     void updateSSBO();
+
+    void updateLODSSBO();
 
     // create a VkShaderModule to encapsulate our shaders
     VkShaderModule createShaderModule(const std::vector<char>& code);
