@@ -120,8 +120,9 @@ void VulkanObject::createCommandBuffers(VkCommandBuffer* commandBuffer, uint32_t
     vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, commandBuffer);
 }
 
-void VulkanObject::initVulkan(GLFWwindow* window) {
+void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> camera) {
     this->window = window;
+    this->camera = camera;
 
     imgui_clear_value = { 0.6f, 0.4f, 0.0f, 1.0f };
 
@@ -144,6 +145,7 @@ void VulkanObject::initVulkan(GLFWwindow* window) {
     createImageViews();
     // create render pass object using previous information
     createRenderPass();
+    createComputePipeline();
     // create graphics pipeline
     createGraphicsPipeline();
     // create our command pool
@@ -399,6 +401,20 @@ void VulkanObject::createImage(uint32_t width, uint32_t height, VkFormat format,
 }
 
 void VulkanObject::createDescriptorPool() {
+    std::array<VkDescriptorPoolSize, 1> computePoolSizes{};
+    computePoolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    computePoolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+    VkDescriptorPoolCreateInfo computePoolInfo{};
+    computePoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    computePoolInfo.poolSizeCount = static_cast<uint32_t>(computePoolSizes.size());
+    computePoolInfo.pPoolSizes = computePoolSizes.data();
+    computePoolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+
+    if (vkCreateDescriptorPool(device, &computePoolInfo, nullptr, &computeDescriptorPool) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create descriptor pool!");
+    }
+
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
@@ -480,6 +496,24 @@ void VulkanObject::createSSBOs() {
     VkDeviceSize bufferSize = sizeof(ModelTransforms);
 
     createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, SSBO, SSBOMemory);
+
+    bufferSize = modelTransforms->modelMatricies.size() * sizeof(VkDrawIndexedIndirectCommand);
+
+    indirectLodSSBO.resize(swapChainImages.size());
+    indirectLodSSBOMemory.resize(swapChainImages.size());
+
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        createBuffer(bufferSize, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indirectLodSSBO[i], indirectLodSSBOMemory[i]);
+    }
+
+    bufferSize = dragon_model.getTotalLodLevels() * sizeof(LodConfigData);
+
+    lodConfigSSBO.resize(swapChainImages.size());
+    lodConfigSSBOMemory.resize(swapChainImages.size());
+
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, lodConfigSSBO[i], lodConfigSSBOMemory[i]);
+    }
 }
 
 void VulkanObject::createIndexBuffer() {
@@ -737,6 +771,10 @@ void VulkanObject::cleanupSwapChain() {
     for (size_t i = 0; i < uniformBuffers.size(); i++) {
         vkDestroyBuffer(device, uniformBuffers[i], nullptr);
         vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+        vkDestroyBuffer(device, indirectLodSSBO[i], nullptr);
+        vkFreeMemory(device, indirectLodSSBOMemory[i], nullptr);
+        vkDestroyBuffer(device, lodConfigSSBO[i], nullptr);
+        vkFreeMemory(device, lodConfigSSBOMemory[i], nullptr);
     }
 
     vkDestroyBuffer(device, SSBO, nullptr);
@@ -771,6 +809,7 @@ void VulkanObject::cleanup() {
 
     vkDestroyFramebuffer(device, geometryFrameBuffer, nullptr);
 
+    computeProgram.reset();
     lightingProgram.reset();
     geometryProgram.reset();
     shadowProgram.reset();
@@ -1004,6 +1043,7 @@ void VulkanObject::createLogicalDevice() {
     // zero initialise device features
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = VK_TRUE;
+    deviceFeatures.multiDrawIndirect = VK_TRUE;
 
     // struct to hold device info
     VkDeviceCreateInfo createInfo{};
@@ -1223,7 +1263,7 @@ void VulkanObject::createGeometryPass()
 
     attachmentDescriptions[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     attachmentDescriptions[0].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachmentDescriptions[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachmentDescriptions[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachmentDescriptions[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachmentDescriptions[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachmentDescriptions[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -1248,7 +1288,7 @@ void VulkanObject::createGeometryPass()
 
     attachmentDescriptions[1].format = VK_FORMAT_A2R10G10B10_UNORM_PACK32;
     attachmentDescriptions[1].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachmentDescriptions[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachmentDescriptions[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachmentDescriptions[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachmentDescriptions[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachmentDescriptions[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -1261,7 +1301,7 @@ void VulkanObject::createGeometryPass()
     // output color
     attachmentDescriptions[2].format = swapChainImageFormat;
     attachmentDescriptions[2].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachmentDescriptions[2].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachmentDescriptions[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachmentDescriptions[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachmentDescriptions[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachmentDescriptions[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -1524,6 +1564,7 @@ void VulkanObject::recreateSwapChain() {
     createImageViews();
     // create render pass
     createRenderPass();
+    createComputePipeline();
     // create graphics pipeline
     createGraphicsPipeline();
     createDepthResources();
@@ -1570,6 +1611,18 @@ void VulkanObject::recreateSwapChain() {
 }
 
 void VulkanObject::createDescriptorSets() {
+    std::vector<VkDescriptorSetLayout> computeLayouts(swapChainImages.size(), computeProgram->getSetLayout());
+    VkDescriptorSetAllocateInfo computeAllocInfo{};
+    computeAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    computeAllocInfo.descriptorPool = computeDescriptorPool;
+    computeAllocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+    computeAllocInfo.pSetLayouts = computeLayouts.data();
+
+    computeDescriptorSets.resize(swapChainImages.size());
+    if (vkAllocateDescriptorSets(device, &computeAllocInfo, computeDescriptorSets.data()) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+    }
+
     std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), geometryProgram->getSetLayout());
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1617,6 +1670,16 @@ void VulkanObject::createDescriptorSets() {
             0,
             sizeof(ModelTransforms)};
 
+        mc::DescriptorInfo<VkDescriptorBufferInfo> indirectSsboInfo{
+            indirectLodSSBO[i],
+            0,
+            modelTransforms->modelMatricies.size() * sizeof(VkDrawIndexedIndirectCommand)};
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> lodConfigSsboInfo{
+            lodConfigSSBO[i],
+            0,
+            dragon_model.getTotalLodLevels() * sizeof(LodConfigData)};
+
         mc::DescriptorInfo<VkDescriptorBufferInfo> shadowBufferInfo{
             shadowUniformBuffers[i],
             0,
@@ -1648,6 +1711,47 @@ void VulkanObject::createDescriptorSets() {
         mc::DescriptorInfo<VkDescriptorImageInfo> depthDescriptorInfo{
             offScreenPass.depth.view,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+        std::array<VkWriteDescriptorSet, 4> computeDescriptorWrites{};
+
+        computeDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        computeDescriptorWrites[0].dstSet = computeDescriptorSets[i];
+        computeDescriptorWrites[0].dstBinding = 0;
+        computeDescriptorWrites[0].dstArrayElement = 0;
+        computeDescriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        computeDescriptorWrites[0].descriptorCount = 1;
+        computeDescriptorWrites[0].pBufferInfo = ssboInfo.getPtr();
+
+        computeDescriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        computeDescriptorWrites[1].dstSet = computeDescriptorSets[i];
+        computeDescriptorWrites[1].dstBinding = 1;
+        computeDescriptorWrites[1].dstArrayElement = 0;
+        computeDescriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        computeDescriptorWrites[1].descriptorCount = 1;
+        computeDescriptorWrites[1].pBufferInfo = indirectSsboInfo.getPtr();
+
+        computeDescriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        computeDescriptorWrites[2].dstSet = computeDescriptorSets[i];
+        computeDescriptorWrites[2].dstBinding = 2;
+        computeDescriptorWrites[2].dstArrayElement = 0;
+        computeDescriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        computeDescriptorWrites[2].descriptorCount = 1;
+        computeDescriptorWrites[2].pBufferInfo = uboInfo.getPtr();
+
+        computeDescriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        computeDescriptorWrites[3].dstSet = computeDescriptorSets[i];
+        computeDescriptorWrites[3].dstBinding = 3;
+        computeDescriptorWrites[3].dstArrayElement = 0;
+        computeDescriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        computeDescriptorWrites[3].descriptorCount = 1;
+        computeDescriptorWrites[3].pBufferInfo = lodConfigSsboInfo.getPtr();
+
+        vkUpdateDescriptorSets(
+            device,
+            static_cast<uint32_t>(computeDescriptorWrites.size()),
+            computeDescriptorWrites.data(),
+            0,
+            nullptr);
 
         std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
@@ -1737,6 +1841,22 @@ void VulkanObject::createDescriptorSets() {
         shadowDescriptorWrites[0].pBufferInfo = shadowBufferInfo.getPtr();
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(shadowDescriptorWrites.size()), shadowDescriptorWrites.data(), 0, nullptr);
+    }
+}
+
+void VulkanObject::createComputePipeline()
+{
+    auto lodIndirectShaderModule = std::make_shared< mc::Shader>(device, "../shaders/vulkan3/lod_indirect.spv", VK_SHADER_STAGE_COMPUTE_BIT);
+    computeProgram = std::make_shared<mc::ShaderProgram>(device, mc::Shaders{ lodIndirectShaderModule });
+
+    VkComputePipelineCreateInfo info = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
+    info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.stage.module = lodIndirectShaderModule->get();
+    info.stage.pName = "main";
+    info.layout = computeProgram->getLayout();
+    if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &computePipeline) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create compute pipeline!");
     }
 }
 
@@ -2174,6 +2294,38 @@ void VulkanObject::createCommandBuffers() {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
 
+        vkCmdPipelineBarrier(
+            commandBuffers[i],
+            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0,
+            0,
+            VK_NULL_HANDLE,
+            0,
+            VK_NULL_HANDLE,
+            0,
+            VK_NULL_HANDLE);
+        // Bind the compute pipeline.
+        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+        // Bind descriptor set.
+        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computeProgram->getLayout(), 0, 1,
+            &computeDescriptorSets[i], 0, nullptr);
+        // Dispatch compute job.
+        vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
+        // Barrier between compute and vertex shading.
+        vkCmdPipelineBarrier(
+            commandBuffers[i],
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+
+            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+            0,
+            0,
+            VK_NULL_HANDLE,
+            0,
+            VK_NULL_HANDLE,
+            0,
+            VK_NULL_HANDLE);
+
         // struct to specify render pass info
         VkRenderPassBeginInfo shadowRenderPassInfo{};
         // assign type
@@ -2207,7 +2359,7 @@ void VulkanObject::createCommandBuffers() {
 
         vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowProgram->getLayout(), 0, 1, &shadowDescriptorSets[i], 0, nullptr);
 
-        vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(dragon_model.getIndices().size()), 1000, 0, 0, 0);
+        vkCmdDrawIndexedIndirect(commandBuffers[i], indirectLodSSBO[i], 0, 8000, sizeof(VkDrawIndexedIndirectCommand));
 
         vkCmdEndRenderPass(commandBuffers[i]);
 
@@ -2246,7 +2398,7 @@ void VulkanObject::createCommandBuffers() {
 
         vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, geometryProgram->getLayout(), 0, 1, &descriptorSets[i], 0, nullptr);
 
-        vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(dragon_model.getIndices().size()), 1000, 0, 0, 0);
+        vkCmdDrawIndexedIndirect(commandBuffers[i], indirectLodSSBO[i], 0, 8000, sizeof(VkDrawIndexedIndirectCommand));
 
         vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
 
@@ -2328,7 +2480,7 @@ void VulkanObject::drawFrame() {
     imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
     updateUniformBuffer(imageIndex);
-    //updateSSBO();
+    updateLODSSBO();
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -2344,25 +2496,31 @@ void VulkanObject::drawFrame() {
     ImGui::SliderFloat("ambient", &dragon_model.ambient, 0.0f, 1.0f);
     ImGui::SliderFloat("diffuse", &dragon_model.diffuse, 0.0f, 1.0f);
     ImGui::SliderFloat("specular", &dragon_model.specular, 0.0f, 1.0f);
-    ImGui::SliderFloat("zoom", &zoom, 10.0f, 100.0f);
-    ImGui::SliderFloat("scale", &scale, 0.1f, 2.0f);
-    ImGui::SliderFloat("X offset", &x_offset, -100.0f, 100.0f);
-    ImGui::SliderFloat("Y offset", &y_offset, -100.0f, 100.0f);
-    ImGui::SliderFloat("Z offset", &z_offset, -100.0f, 100.0f);
-    ImGui::SliderFloat("X model rotation", &x_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("Y model rotation", &y_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("Z model rotation", &z_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("zoom", &zoom, 10.0f, 100.0f);
+    //ImGui::SliderFloat("scale", &scale, 0.1f, 2.0f);
+    //ImGui::SliderFloat("X offset", &x_offset, -100.0f, 100.0f);
+    //ImGui::SliderFloat("Y offset", &y_offset, -100.0f, 100.0f);
+    //ImGui::SliderFloat("Z offset", &z_offset, -100.0f, 100.0f);
+    //ImGui::SliderFloat("X model rotation", &x_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("Y model rotation", &y_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("Z model rotation", &z_rotation, 0.0f, 2 * glm::pi<float>());
     ImGui::SliderFloat("Y light rotation", &y_light_rotation, 0.0f, 2 * glm::pi<float>());
     ImGui::SliderFloat("Z light rotation", &z_light_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("X camera rotation", &camera_x_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("Y camera rotation", &camera_y_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("Z camera rotation", &camera_z_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("shininess (Ns)", &dragon_model.Ns, 0.00f, 128.0f);
+    //ImGui::SliderFloat("X camera rotation", &camera_x_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("Y camera rotation", &camera_y_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("Z camera rotation", &camera_z_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("shininess (Ns)", &dragon_model.Ns, 0.00f, 128.0f);
     ImGui::SliderFloat("Shadow bias", &shadow_bias, -0.001f, 0.001f);
     ImGui::ColorEdit3("ambient (Ka)", (float*)&dragon_model.Ka[0], flags);
     ImGui::ColorEdit3("diffuse (Kd)", (float*)&dragon_model.Kd[0], flags);
     ImGui::ColorEdit3("specular (Ks)", (float*)&dragon_model.Ks[0], flags);
     ImGui::ColorEdit3("emission (Ke)", (float*)&dragon_model.Ke[0], flags);
+    auto& max_dists = dragon_model.getMaxDistances();
+    ImGui::SliderFloat("LOD level 0 max dist", &max_dists[0], 0.00f, max_dists[1]);
+    ImGui::SliderFloat("LOD level 1 max dist", &max_dists[1], max_dists[0], max_dists[2]);
+    ImGui::SliderFloat("LOD level 2 max dist", &max_dists[2], max_dists[1], max_dists[3]);
+    ImGui::SliderFloat("LOD level 3 max dist", &max_dists[3], max_dists[2], max_dists[4]);
+    ImGui::SliderFloat("LOD level 4 max dist", &max_dists[4], max_dists[3], 30.0f);
     ImGui::RadioButton("normals", &display_mode, 0);
     ImGui::RadioButton("depth", &display_mode, 1);
     ImGui::RadioButton("specularity", &display_mode, 2);
@@ -2494,7 +2652,8 @@ void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
     camera_rotation_matrix *= glm::rotate(camera_z_rotation, glm::vec3(0.0, 0.0, 1.0));
 
     ubo.model = translation_matrix * rotation_matrix * scale_matrix;
-    ubo.view = glm::lookAt(glm::vec3(camera_rotation_matrix * glm::vec4(-2.0f, 0.0f, 0.0f, 1.0f)), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    //ubo.view = glm::lookAt(glm::vec3(camera_rotation_matrix * glm::vec4(-2.0f, 0.0f, 0.0f, 1.0f)), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo.view = camera->GetViewMatrix();
     ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.001f, 1000.0f);
     ubo.proj[1][1] *= -1;
 
@@ -2544,7 +2703,7 @@ void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
 }
 
 void VulkanObject::updateSSBO() {
-    auto ssbo = std::make_unique<ModelTransforms>();
+    modelTransforms = std::make_unique<ModelTransforms>();
 
     std::random_device dev;
     std::mt19937 rng(dev());
@@ -2553,7 +2712,7 @@ void VulkanObject::updateSSBO() {
     std::uniform_real_distribution<float> rotation_dist(0.0f, 2.0f * glm::pi<float>());
 
     //std::fill(std::begin(ssbo->modelMatricies), std::end(ssbo->modelMatricies), glm::mat4{ 1.0f });
-    for (size_t matrixIndex = 0; matrixIndex < ssbo->modelMatricies.size(); ++matrixIndex)
+    for (size_t matrixIndex = 0; matrixIndex < modelTransforms->modelMatricies.size(); ++matrixIndex)
     {
         glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(translation_dist(rng), translation_dist(rng), translation_dist(rng)))
             * glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, 0.0f));
@@ -2562,13 +2721,27 @@ void VulkanObject::updateSSBO() {
         rotation_matrix *= glm::rotate(rotation_dist(rng), glm::vec3(0.0f, 1.0f, 0.0f));
         rotation_matrix *= glm::rotate(rotation_dist(rng), glm::vec3(0.0f, 0.0f, 1.0f));
 
-        ssbo->modelMatricies[matrixIndex] = translation_matrix * rotation_matrix * scale_matrix;
+        modelTransforms->modelMatricies[matrixIndex] = translation_matrix * rotation_matrix * scale_matrix;
     }
 
     void* data;
     vkMapMemory(device, SSBOMemory, 0, sizeof(ModelTransforms), 0, &data);
-    memcpy(data, ssbo.get(), sizeof(ModelTransforms));
+    memcpy(data, modelTransforms.get(), sizeof(ModelTransforms));
     vkUnmapMemory(device, SSBOMemory);
+
+    updateLODSSBO();
+}
+
+void VulkanObject::updateLODSSBO()
+{
+    void* data;
+    auto const lodConfig = dragon_model.getLodConfigData();
+    for (size_t i = 0; i < swapChainImageViews.size(); i++)
+    {
+        vkMapMemory(device, lodConfigSSBOMemory[i], 0, dragon_model.getTotalLodLevels() * sizeof(LodConfigData), 0, &data);
+        memcpy(data, lodConfig.data(), dragon_model.getTotalLodLevels() * sizeof(LodConfigData));
+        vkUnmapMemory(device, lodConfigSSBOMemory[i]);
+    }
 }
 
 // create a VkShaderModule to encapsulate our shaders
@@ -2714,7 +2887,7 @@ bool VulkanObject::isDeviceSuitable(VkPhysicalDevice device) {
     vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
 
     // if we have all queues, extension support and swap chain support
-    return indices.isComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy;
+    return indices.isComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy && supportedFeatures.multiDrawIndirect;
 }
 
 // check that our device has support for the set of extensions we are interested in
