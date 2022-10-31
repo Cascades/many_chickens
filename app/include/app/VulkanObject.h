@@ -136,7 +136,7 @@ private:
     // bool to store if we have resized
     bool framebufferResized = false;
 
-    Model dragon_model;
+    Model<5> dragon_model;
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
     VkBuffer indexBuffer;
