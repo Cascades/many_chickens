@@ -18,6 +18,11 @@ void GLFWObject::init()
 
     // create the window! (With width WIDTH, height HEIGHT, header Vulkan, and nullptr for window (we are not full screen) and shared resources (we aren't sharing)
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-    glfwSetWindowUserPointer(window, this);
+    //glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, VulkanObject::framebufferResizeCallback);
+    //glfwSetWindowUserPointer(window, this);
+    glfwSetCursorPosCallback(window, VulkanObject::mouseMoveCallback);
+    //glfwSetWindowUserPointer(window, this);
+    glfwSetScrollCallback(window, VulkanObject::scrollMoveCallback);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }

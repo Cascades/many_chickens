@@ -120,8 +120,9 @@ void VulkanObject::createCommandBuffers(VkCommandBuffer* commandBuffer, uint32_t
     vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, commandBuffer);
 }
 
-void VulkanObject::initVulkan(GLFWwindow* window) {
+void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> camera) {
     this->window = window;
+    this->camera = camera;
 
     imgui_clear_value = { 0.6f, 0.4f, 0.0f, 1.0f };
 
@@ -2495,20 +2496,20 @@ void VulkanObject::drawFrame() {
     ImGui::SliderFloat("ambient", &dragon_model.ambient, 0.0f, 1.0f);
     ImGui::SliderFloat("diffuse", &dragon_model.diffuse, 0.0f, 1.0f);
     ImGui::SliderFloat("specular", &dragon_model.specular, 0.0f, 1.0f);
-    ImGui::SliderFloat("zoom", &zoom, 10.0f, 100.0f);
-    ImGui::SliderFloat("scale", &scale, 0.1f, 2.0f);
-    ImGui::SliderFloat("X offset", &x_offset, -100.0f, 100.0f);
-    ImGui::SliderFloat("Y offset", &y_offset, -100.0f, 100.0f);
-    ImGui::SliderFloat("Z offset", &z_offset, -100.0f, 100.0f);
-    ImGui::SliderFloat("X model rotation", &x_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("Y model rotation", &y_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("Z model rotation", &z_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("zoom", &zoom, 10.0f, 100.0f);
+    //ImGui::SliderFloat("scale", &scale, 0.1f, 2.0f);
+    //ImGui::SliderFloat("X offset", &x_offset, -100.0f, 100.0f);
+    //ImGui::SliderFloat("Y offset", &y_offset, -100.0f, 100.0f);
+    //ImGui::SliderFloat("Z offset", &z_offset, -100.0f, 100.0f);
+    //ImGui::SliderFloat("X model rotation", &x_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("Y model rotation", &y_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("Z model rotation", &z_rotation, 0.0f, 2 * glm::pi<float>());
     ImGui::SliderFloat("Y light rotation", &y_light_rotation, 0.0f, 2 * glm::pi<float>());
     ImGui::SliderFloat("Z light rotation", &z_light_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("X camera rotation", &camera_x_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("Y camera rotation", &camera_y_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("Z camera rotation", &camera_z_rotation, 0.0f, 2 * glm::pi<float>());
-    ImGui::SliderFloat("shininess (Ns)", &dragon_model.Ns, 0.00f, 128.0f);
+    //ImGui::SliderFloat("X camera rotation", &camera_x_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("Y camera rotation", &camera_y_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("Z camera rotation", &camera_z_rotation, 0.0f, 2 * glm::pi<float>());
+    //ImGui::SliderFloat("shininess (Ns)", &dragon_model.Ns, 0.00f, 128.0f);
     ImGui::SliderFloat("Shadow bias", &shadow_bias, -0.001f, 0.001f);
     ImGui::ColorEdit3("ambient (Ka)", (float*)&dragon_model.Ka[0], flags);
     ImGui::ColorEdit3("diffuse (Kd)", (float*)&dragon_model.Kd[0], flags);
@@ -2651,7 +2652,8 @@ void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
     camera_rotation_matrix *= glm::rotate(camera_z_rotation, glm::vec3(0.0, 0.0, 1.0));
 
     ubo.model = translation_matrix * rotation_matrix * scale_matrix;
-    ubo.view = glm::lookAt(glm::vec3(camera_rotation_matrix * glm::vec4(-2.0f, 0.0f, 0.0f, 1.0f)), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    //ubo.view = glm::lookAt(glm::vec3(camera_rotation_matrix * glm::vec4(-2.0f, 0.0f, 0.0f, 1.0f)), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo.view = camera->GetViewMatrix();
     ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.001f, 1000.0f);
     ubo.proj[1][1] *= -1;
 

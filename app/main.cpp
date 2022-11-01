@@ -6,6 +6,8 @@
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 
+#include "app/Camera.h"
+
 int main() {
     // function used to create a window with GLFW
     GLFWObject glfw_object(1920, 1080);
@@ -13,12 +15,19 @@ int main() {
 
     std::unique_ptr<VulkanObject> vulkan_object = std::make_unique<VulkanObject>();
 
+    auto camera = std::make_shared<mc::Camera>(1920, 1080);
+
     // create vulkan instance
-    vulkan_object->initVulkan(glfw_object.window);
+    vulkan_object->initVulkan(glfw_object.window, camera);
+    glfwSetWindowUserPointer(glfw_object.window, vulkan_object.get());
 
     try {
         // while the window is not closed by the user
         while (!glfwWindowShouldClose(glfw_object.window)) {
+
+            camera->update_delta_time();
+            camera->process_input(glfw_object.window);
+
             // poll for user inputs
             glfwPollEvents();
             // draws our frame

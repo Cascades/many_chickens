@@ -18,12 +18,13 @@
 #include <iostream>
 #include <optional>
 
+#include "app/Camera.h"
 #include "app/Model.h"
 #include "app/ShaderProgram.h"
 
 class VulkanObject {
 public:
-    void initVulkan(GLFWwindow* window);
+    void initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> camera);
     void drawFrame();
     void cleanup();
 
@@ -33,6 +34,26 @@ public:
         VulkanObject* app = reinterpret_cast<VulkanObject*>(glfwGetWindowUserPointer(window));
         app->framebufferResized = true;
     }
+
+    static void mouseMoveCallback(GLFWwindow* window, double xposIn, double yposIn)
+    {
+        VulkanObject* app = reinterpret_cast<VulkanObject*>(glfwGetWindowUserPointer(window));
+        if (app->camera)
+        {
+            app->camera->mouse_callback(window, xposIn, yposIn);
+        }
+    }
+
+    static void scrollMoveCallback(GLFWwindow* window, double xoffset, double yoffset)
+    {
+        VulkanObject* app = reinterpret_cast<VulkanObject*>(glfwGetWindowUserPointer(window));
+        if (app->camera)
+        {
+            app->camera->scroll_callback(window, xoffset, yoffset);
+        }
+    }
+
+    std::shared_ptr<mc::Camera> camera;
 
 private:
     // pointer to GLFW window instance
