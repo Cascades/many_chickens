@@ -67,7 +67,7 @@ void main()
 	}
 	else if(ubo.display_mode == 1)
 	{
-        float z = LinearizeDepth(subpassLoad(inDepth).r, 0.001, 1000.0) / 1000.0;
+        float z = LinearizeDepth(subpassLoad(inDepth).r, 0.001, 20.0) / 20.0;
 		outFragcolor = vec4(z, z, z,  1.0);
 	}
 	else if(ubo.display_mode == 2)

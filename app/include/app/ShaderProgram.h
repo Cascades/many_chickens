@@ -17,13 +17,22 @@ namespace mc
 
 		ShaderProgram(
 			VkDevice device,
-			mc::Shaders shaders) :
+			mc::Shaders shaders,
+			size_t pushConstantSize = 0) :
 			device(device)
 		{
+			for (const auto shader : shaders)
+			{
+				if (shader->getUsesPushConstants())
+				{
+					pushConstantStages |= shader->getShaderStage();
+				}
+			}
+
 			setLayout = createSetLayout(shaders);
 			assert(setLayout);
 
-			layout = createPipelineLayout();
+			layout = createPipelineLayout(pushConstantSize);
 			assert(layout);
 		}
 
@@ -48,8 +57,9 @@ namespace mc
 			}
 		}
 
-		VkPipelineLayout getLayout() const { return layout; }
-		VkDescriptorSetLayout getSetLayout() const { return setLayout; }
+		const VkPipelineLayout& getLayout() const { return layout; }
+		const VkDescriptorSetLayout& getSetLayout() const { return setLayout; }
+		const VkShaderStageFlags& getPushConstantStages() const { return pushConstantStages; }
 	private:
 		uint32_t gatherResources(Shaders shaders, VkDescriptorType(&resourceTypes)[32])
 		{
@@ -165,13 +175,24 @@ namespace mc
 			return setLayout;
 		}
 
-		VkPipelineLayout createPipelineLayout()
+		VkPipelineLayout createPipelineLayout(size_t pushConstantSize)
 		{
 			VkPipelineLayoutCreateInfo createInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
 			createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 			createInfo.setLayoutCount = 1;
 			createInfo.pSetLayouts = &setLayout;
 			createInfo.pushConstantRangeCount = 0;
+
+			VkPushConstantRange pushConstantRange = {};
+
+			if (pushConstantSize)
+			{
+				pushConstantRange.stageFlags = pushConstantStages;
+				pushConstantRange.size = uint32_t(pushConstantSize);
+
+				createInfo.pushConstantRangeCount = 1;
+				createInfo.pPushConstantRanges = &pushConstantRange;
+			}
 
 			VkPipelineLayout layout = 0;
 			if (vkCreatePipelineLayout(device, &createInfo, 0, &layout) != VK_SUCCESS) {

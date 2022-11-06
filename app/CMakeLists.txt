@@ -31,6 +31,7 @@ file(TOUCH ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/geometry_pass_frag.spv)
 file(TOUCH ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lighting_pass_vert.spv)
 file(TOUCH ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lighting_pass_frag.spv)
 file(TOUCH ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lod_indirect.spv)
+file(TOUCH ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/depth_pyramid_generate.spv)
 file(TOUCH ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/shadow_pass_vert.spv)
 file(TOUCH ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/shadow_pass_frag.spv)
 
@@ -40,6 +41,7 @@ add_custom_command(OUTPUT
 		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lighting_pass_vert.spv
 		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lighting_pass_frag.spv
 		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lod_indirect.spv
+		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/depth_pyramid_generate.spv
 		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/shadow_pass_vert.spv
 		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/shadow_pass_frag.spv
 	COMMENT "Recompiling shaders"
@@ -48,6 +50,7 @@ add_custom_command(OUTPUT
 	COMMAND $ENV{VULKAN_SDK}/Bin/glslc.exe ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lighting_pass.vert -o ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lighting_pass_vert.spv
 	COMMAND $ENV{VULKAN_SDK}/Bin/glslc.exe ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lighting_pass.frag -o ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lighting_pass_frag.spv
 	COMMAND $ENV{VULKAN_SDK}/Bin/glslc.exe -fshader-stage=compute ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lod_indirect.glsl -o ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lod_indirect.spv
+	COMMAND $ENV{VULKAN_SDK}/Bin/glslc.exe -fshader-stage=compute ${CMAKE_CURRENT_SOURCE_DIR}/shaders/depth_pyramid_generate.glsl -o ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/depth_pyramid_generate.spv
 	COMMAND $ENV{VULKAN_SDK}/Bin/glslc.exe ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_pass.vert -o ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/shadow_pass_vert.spv
 	COMMAND $ENV{VULKAN_SDK}/Bin/glslc.exe ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_pass.frag -o ${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/shadow_pass_frag.spv
 	DEPENDS
@@ -56,6 +59,7 @@ add_custom_command(OUTPUT
 		${CMAKE_CURRENT_SOURCE_DIR}/shaders/lighting_pass.frag
 		${CMAKE_CURRENT_SOURCE_DIR}/shaders/lighting_pass.vert
 		${CMAKE_CURRENT_SOURCE_DIR}/shaders/lod_indirect.glsl
+		${CMAKE_CURRENT_SOURCE_DIR}/shaders/depth_pyramid_generate.glsl
 		${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_pass.frag
 		${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_pass.vert
 )
@@ -67,6 +71,7 @@ add_custom_target(shaders3 ALL
 		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lighting_pass_frag.spv
 		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lighting_pass_vert.spv
 		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/lod_indirect.spv
+		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/depth_pyramid_generate.spv
 		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/shadow_pass_frag.spv
 		${CMAKE_INSTALL_PREFIX}/shaders/vulkan3/shadow_pass_vert.spv
 )

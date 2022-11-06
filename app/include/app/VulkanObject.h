@@ -21,6 +21,7 @@
 #include "app/Camera.h"
 #include "app/Model.h"
 #include "app/ShaderProgram.h"
+#include "app/DescriptorInfo.h"
 
 class VulkanObject {
 public:
@@ -102,6 +103,12 @@ private:
         VkRenderPass renderPass;
     } offScreenPass;
 
+    VkImage depthPyramidImage;
+    VkDeviceMemory depthPyramidMem;
+    std::vector<VkImageView> depthPyramidViews;
+    std::vector<VkSampler> depthPyramidSamplers;
+    std::vector<mc::DescriptorInfo<VkDescriptorImageInfo>> depthPyramidDescriptorInfo;
+
     struct DepthFrameBuffer {
         int32_t width, height;
         VkFramebuffer frameBuffer;
@@ -128,10 +135,12 @@ private:
     //VkDescriptorSetLayout lightingSetLayout;
     //VkDescriptorSetLayout shadowSetLayout;
     std::shared_ptr<mc::ShaderProgram> computeProgram;
+    std::shared_ptr<mc::ShaderProgram> depthPyramidComputeProgram;
     std::shared_ptr<mc::ShaderProgram> geometryProgram;
     std::shared_ptr<mc::ShaderProgram> lightingProgram;
     std::shared_ptr<mc::ShaderProgram> shadowProgram;
     VkPipeline computePipeline;
+    VkPipeline depthPyramidComputePipeline;
     VkPipeline graphicsPipeline;
     VkPipeline lightingPipeline;
     VkPipeline shadowPipeline;
@@ -185,10 +194,12 @@ private:
     std::vector<VkDeviceMemory> shadowUniformBuffersMemory;
 
     VkDescriptorPool computeDescriptorPool;
+    VkDescriptorPool depthPyramidComputeDescriptorPool;
     VkDescriptorPool descriptorPool;
     VkDescriptorPool lightingDescriptorPool;
     VkDescriptorPool shadowDescriptorPool;
     std::vector<VkDescriptorSet> computeDescriptorSets;
+    std::vector<VkDescriptorSet> depthPyramidComputeDescriptorSets;
     std::vector<VkDescriptorSet> descriptorSets;
     std::vector<VkDescriptorSet> lightingDescriptorSets;
     std::vector<VkDescriptorSet> shadowDescriptorSets;
@@ -202,6 +213,7 @@ private:
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
+    VkSampler depthSampler;
 
     std::string MODEL_PATH;
     std::string TEXTURE_PATH;
@@ -241,7 +253,7 @@ private:
 
     void createTextureSampler();
 
-    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t baseMipLevel = 0);
 
     void loadModel();
 
@@ -249,7 +261,16 @@ private:
 
     void createTextureImage();
 
-    void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
+    void createImage(
+        uint32_t width,
+        uint32_t height,
+        VkFormat format,
+        VkImageTiling tiling,
+        VkImageUsageFlags usage,
+        VkMemoryPropertyFlags properties,
+        VkImage& image,
+        VkDeviceMemory& imageMemory,
+        uint32_t mipLevels = 1);
 
     void createDescriptorPool();
 
@@ -375,6 +396,11 @@ private:
         void* pUserData) {
         // output message
         std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+
+        if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+        {
+            assert(false);
+        }
 
         // unless testing validation layer itself, return VK_FALSE (0)
         return VK_FALSE;
