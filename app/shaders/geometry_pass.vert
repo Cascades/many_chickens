@@ -7,6 +7,9 @@ layout(std140, binding = 0) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 proj;
+    mat4 culling_model;
+    mat4 culling_view;
+    mat4 culling_proj;
     mat4 light;
     mat4 lightVP;
 	vec4 Ka;
@@ -23,13 +26,36 @@ layout(std140, binding = 0) uniform UniformBufferObject {
 	float diffuse;
 	float ambient;
     float shadow_bias;
+    float p00;
+	float p11;
+    float culling_p00;
+	float culling_p11;
+	float zNear;
 	int display_mode;
+    int culling_updating;
 } ubo;
 
 layout(std140, binding = 2) readonly buffer ModelTranformsBuffer
 {
 	mat4 data[];
 } modelTranformsBuffer;
+
+struct VkDrawIndexedIndirectCommand
+{
+	uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+    uint meshId;
+    uint pad1;
+    uint pad2;
+};
+
+layout(std430, binding = 4) readonly buffer IndirectBuffer
+{
+	VkDrawIndexedIndirectCommand data[];
+} indirectBuffer;
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inColor;
@@ -41,6 +67,7 @@ layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec2 fragTexCoord;
 layout(location = 3) out float texture_on;
 layout(location = 4) out float specularity;
+layout(location = 5) flat out uint ID;
 
 mat4 rotationMatrix(vec3 axis, float angle)
 {
@@ -57,9 +84,16 @@ mat4 rotationMatrix(vec3 axis, float angle)
 
 void main() {
     // TODO: make the chickens spin!
-    mat4 rotMat = rotationMatrix(normalize(vec3(0.1, 0.2, 0.3)), 25.0);
+    //mat4 rotMat = rotationMatrix(normalize(vec3(0.1, 0.2, 0.3)), 25.0);
 
-    gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[gl_DrawIDARB] * rotMat * vec4(inPosition, 1.0);
+    if (ubo.display_mode == 22)
+    {
+        gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[indirectBuffer.data[gl_DrawIDARB].meshId] * vec4(normalize(inPosition) * 0.351285, 1.0);
+    }
+    else
+    {
+        gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[indirectBuffer.data[gl_DrawIDARB].meshId] * vec4(inPosition, 1.0);
+    }
 
     outNormal = inNormal;
 
@@ -69,4 +103,5 @@ void main() {
 
     fragTexCoord = inTexCoord;
     texture_on = int(ubo.texture_stage_on);
+    ID = gl_DrawIDARB;
 }

@@ -45,7 +45,7 @@ public:
     float specular = 0.1f;
     float diffuse = 0.5f;
     float ambient = 0.2f;
-	
+
 	void loadModel(std::filesystem::path const & model_path)
     {
         tinyobj::ObjReaderConfig reader_config;
@@ -147,6 +147,14 @@ public:
                 Ke = glm::vec3(0.0, 0.0, 0.0);
             }
         }
+
+        float maxDist = 0.0f;
+        for (auto const& vertex : vertices)
+        {
+            maxDist = std::max(maxDist, glm::length(vertex.pos));
+        }
+        std::cout << "MAX DISTTTTTT: " << maxDist << std::endl;
+
         generateLOD();
     }
 
@@ -234,6 +242,7 @@ private:
                     0,
                     &lod_error));
 
+            /*
             std::cout << std::format("| {:^9} | {:.7f} | {:>18} | {:.10f} | {:>15} | {:.7f} |",
                 lod_index,
                 threshold,
@@ -241,8 +250,10 @@ private:
                 target_error,
                 lod_indices[lod_index].size(),
                 lod_error) << std::endl;
+            */
         }
 
+        /*
         std::cout << std::format("| {:^9} | {:.7f} | {:>18} | {:.10f} | {:>15} | {:.7f} |",
             0,
             1.0f,
@@ -250,7 +261,7 @@ private:
             0.0f,
             index_count,
             0.0f) << std::endl;
-
+        */
         indices.clear();
 
         float cuur_max_dist = 8.0f;
@@ -266,7 +277,7 @@ private:
             indices.insert(indices.end(), curr_lod_indices.begin(), curr_lod_indices.end());
         }
 
-        lod_max_distances.back() = 30.0f;
+        lod_max_distances.back() = 50.0f;
 
         std::cout << "total indices: " << indices.size() << std::endl;;
     }

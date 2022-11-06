@@ -91,6 +91,8 @@ namespace mc
 		uint32_t localSizeY;
 		uint32_t localSizeZ;
 
+		bool usesPushConstants;
+
 	public:
 		Shader() = delete;
 
@@ -114,6 +116,7 @@ namespace mc
         VkShaderStageFlagBits getShaderStage() const { return shaderStage; }
 		std::array<VkDescriptorType, 32> getResourceTypes() const { return resourceTypes; }
 		uint32_t getResourceMask() const { return resourceMask; }
+		bool getUsesPushConstants() const { return usesPushConstants; }
 
 	private:
         // create a VkShaderModule to encapsulate our shaders
@@ -340,7 +343,7 @@ namespace mc
 
 				if (id.opcode == SpvOpVariable && id.storageClass == SpvStorageClassPushConstant)
 				{
-					//shader.usesPushConstants = true;
+					usesPushConstants = true;
 				}
 			}
 
