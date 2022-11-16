@@ -266,7 +266,7 @@ private:
             indices.insert(indices.end(), curr_lod_indices.begin(), curr_lod_indices.end());
         }
 
-        lod_max_distances.back() = 30.0f;
+        lod_max_distances.back() = 50.0f;
 
         std::cout << "total indices: " << indices.size() << std::endl;;
     }

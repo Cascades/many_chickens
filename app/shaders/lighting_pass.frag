@@ -21,6 +21,9 @@ layout(std140, binding = 0) uniform UniformBufferObject {
 	float diffuse;
 	float ambient;
     float shadow_bias;
+    float p00;
+	float p11;
+	float zNear;
 	int display_mode;
 } ubo;
 
@@ -29,6 +32,7 @@ layout (input_attachment_index = 0, set = 0, binding = 2) uniform subpassInput i
 layout (input_attachment_index = 0, set = 0, binding = 4) uniform subpassInput inDepth;
 layout (set = 0, binding = 5) uniform sampler2D inShadowDepth;
 layout (set = 0, binding = 6) uniform sampler2DShadow inShadowDepthPCF;
+layout (set = 0, binding = 7) uniform sampler2D inDepthPyramid;
 
 layout (location = 0) in vec2 inUV;
 
@@ -80,12 +84,26 @@ void main()
 	}
     else if(ubo.display_mode == 4)
 	{
-        float depth_val = LinearizeDepth(texture(inShadowDepth, inUV).r, 0.001, 4.0) / 4.0;
+        float depth_val = LinearizeDepth(texture(inShadowDepth, inUV).r, 0.001, 20.0) / 20.0;
 		outFragcolor = vec4(depth_val, depth_val, depth_val, 1.0);
 	}
     else if(ubo.display_mode == 5)
 	{
         outFragcolor = position_from_depth(subpassLoad(inDepth).r);
+	}
+    else if(ubo.display_mode >= 6 && ubo.display_mode < 20)
+	{
+        vec2 frame_size = ubo.win_dim;
+
+        float real_width = pow(2, ceil(log2(frame_size.x)));
+	    float real_height = pow(2, ceil(log2(frame_size.y)));
+
+	    vec2 real_size = vec2(max(real_width, real_height));
+
+	    vec2 scaling_factor = real_size / frame_size;
+
+        float depth_val = LinearizeDepth(textureLod(inDepthPyramid, inUV / scaling_factor, ubo.display_mode - 7).r, 0.001, 20.0) / 20.0;
+		outFragcolor = vec4(depth_val, depth_val, depth_val, 1.0);
 	}
 	else
 	{

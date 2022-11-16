@@ -326,7 +326,7 @@ void VulkanObject::createTextureSampler() {
     }
 }
 
-VkImageView VulkanObject::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t baseMipLevel) {
+VkImageView VulkanObject::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t baseMipLevel, uint32_t levelCount) {
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
@@ -334,7 +334,7 @@ VkImageView VulkanObject::createImageView(VkImage image, VkFormat format, VkImag
     viewInfo.format = format;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = baseMipLevel;
-    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.levelCount = levelCount;
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 1;
     viewInfo.subresourceRange.aspectMask = aspectFlags;
@@ -545,6 +545,10 @@ void VulkanObject::createSSBOs() {
 
     createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, SSBO, SSBOMemory);
 
+    bufferSize = sizeof(std::array<float, 10000>);
+
+    createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, scaleSSBO, scaleSSBOMemory);
+
     bufferSize = modelTransforms->modelMatricies.size() * sizeof(VkDrawIndexedIndirectCommand);
 
     indirectLodSSBO.resize(swapChainImages.size());
@@ -679,6 +683,13 @@ void VulkanObject::transitionImageLayout(VkImage image, VkFormat format, VkImage
 
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_GENERAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
     }
     else {
         throw std::invalid_argument("unsupported layout transition!");
@@ -827,6 +838,8 @@ void VulkanObject::cleanupSwapChain() {
 
     vkDestroyBuffer(device, SSBO, nullptr);
     vkFreeMemory(device, SSBOMemory, nullptr);
+    vkDestroyBuffer(device, scaleSSBO, nullptr);
+    vkFreeMemory(device, scaleSSBOMemory, nullptr);
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 }
@@ -1310,6 +1323,14 @@ void VulkanObject::createImguiPass()
     }
 }
 
+uint32_t VulkanObject::getPow2Size(uint32_t width, uint32_t height)
+{
+    uint32_t imageHeightPow2 = std::pow(2, static_cast<uint32_t>(std::ceil(std::log2f(swapChainExtent.height))));
+    uint32_t imageWidthPow2 = std::pow(2, static_cast<uint32_t>(std::ceil(std::log2f(swapChainExtent.width))));
+
+    return std::max(imageHeightPow2, imageWidthPow2);
+}
+
 void VulkanObject::createGeometryPass()
 {
 	
@@ -1379,10 +1400,12 @@ void VulkanObject::createGeometryPass()
     attachmentDescriptions[2].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 	// depth
-    auto mipLevels = static_cast<uint32_t>(std::floor(std::log2f(swapChainExtent.height))) - 2;
+    uint32_t imageMaxSizePow2 = getPow2Size(swapChainExtent.width, swapChainExtent.height);
+
+    auto mipLevels = static_cast<uint32_t>(std::log2(imageMaxSizePow2)) - 1;
     assert(mipLevels >= 1);
-    createImage(swapChainExtent.width / 2,
-        swapChainExtent.height / 2,
+    createImage(imageMaxSizePow2 / 2,
+        imageMaxSizePow2 / 2,
         VK_FORMAT_R32_SFLOAT,
         VK_IMAGE_TILING_OPTIMAL,
         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
@@ -1401,6 +1424,13 @@ void VulkanObject::createGeometryPass()
                 mipLevel)
         );
     }
+
+    depthPyramidMultiMipView = createImageView(
+        depthPyramidImage,
+        VK_FORMAT_R32_SFLOAT,
+        VK_IMAGE_ASPECT_COLOR_BIT,
+        0,
+        mipLevels);
 
     createImage(swapChainExtent.width,
         swapChainExtent.height,
@@ -1775,6 +1805,11 @@ void VulkanObject::createDescriptorSets() {
             0,
             sizeof(ModelTransforms)};
 
+        mc::DescriptorInfo<VkDescriptorBufferInfo> scaleSsboInfo{
+            scaleSSBO,
+            0,
+            sizeof(std::array<float, 10000>) };
+
         mc::DescriptorInfo<VkDescriptorBufferInfo> indirectSsboInfo{
             indirectLodSSBO[i],
             0,
@@ -1825,7 +1860,12 @@ void VulkanObject::createDescriptorSets() {
                 VK_IMAGE_LAYOUT_GENERAL);
         }
 
-        std::array<VkWriteDescriptorSet, 4> computeDescriptorWrites{};
+        mc::DescriptorInfo<VkDescriptorImageInfo> depthMultiMipDescriptorInfo{
+            depthSampler,
+            depthPyramidMultiMipView,
+            VK_IMAGE_LAYOUT_GENERAL};
+
+        std::array<VkWriteDescriptorSet, 6> computeDescriptorWrites{};
 
         computeDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         computeDescriptorWrites[0].dstSet = computeDescriptorSets[i];
@@ -1858,6 +1898,22 @@ void VulkanObject::createDescriptorSets() {
         computeDescriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         computeDescriptorWrites[3].descriptorCount = 1;
         computeDescriptorWrites[3].pBufferInfo = lodConfigSsboInfo.getPtr();
+
+        computeDescriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        computeDescriptorWrites[4].dstSet = computeDescriptorSets[i];
+        computeDescriptorWrites[4].dstBinding = 4;
+        computeDescriptorWrites[4].dstArrayElement = 0;
+        computeDescriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        computeDescriptorWrites[4].descriptorCount = 1;
+        computeDescriptorWrites[4].pBufferInfo = scaleSsboInfo.getPtr();
+
+        computeDescriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        computeDescriptorWrites[5].dstSet = computeDescriptorSets[i];
+        computeDescriptorWrites[5].dstBinding = 5;
+        computeDescriptorWrites[5].dstArrayElement = 0;
+        computeDescriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        computeDescriptorWrites[5].descriptorCount = 1;
+        computeDescriptorWrites[5].pImageInfo = depthMultiMipDescriptorInfo.getPtr();
 
         vkUpdateDescriptorSets(
             device,
@@ -1894,7 +1950,7 @@ void VulkanObject::createDescriptorSets() {
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
-        std::array<VkWriteDescriptorSet, 6> lightingDescriptorWrites{};
+        std::array<VkWriteDescriptorSet, 7> lightingDescriptorWrites{};
 
         lightingDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         lightingDescriptorWrites[0].dstSet = lightingDescriptorSets[i];
@@ -1940,6 +1996,14 @@ void VulkanObject::createDescriptorSets() {
         lightingDescriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         lightingDescriptorWrites[5].descriptorCount = 1;
         lightingDescriptorWrites[5].pImageInfo = PCFShadowImageInfo.getPtr();
+
+        lightingDescriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lightingDescriptorWrites[6].dstSet = lightingDescriptorSets[i];
+        lightingDescriptorWrites[6].dstBinding = 7;
+        lightingDescriptorWrites[6].dstArrayElement = 0;
+        lightingDescriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        lightingDescriptorWrites[6].descriptorCount = 1;
+        lightingDescriptorWrites[6].pImageInfo = depthMultiMipDescriptorInfo.getPtr();
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(lightingDescriptorWrites.size()), lightingDescriptorWrites.data(), 0, nullptr);
 
@@ -2416,6 +2480,8 @@ void VulkanObject::createCommandBuffers() {
         throw std::runtime_error("failed to allocate command buffers!");
     }
 
+    transitionImageLayout(depthPyramidImage, VK_FORMAT_R32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
     // for each command buffer generated
     for (size_t i = 0; i < commandBuffers.size(); i++) {
         // specify some info about the usage of this command buffer
@@ -2430,17 +2496,31 @@ void VulkanObject::createCommandBuffers() {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
 
+        std::array<VkImageMemoryBarrier, 1> initialPyramidBarriersTransition{};
+        initialPyramidBarriersTransition[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        initialPyramidBarriersTransition[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        initialPyramidBarriersTransition[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        initialPyramidBarriersTransition[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        initialPyramidBarriersTransition[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        initialPyramidBarriersTransition[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        initialPyramidBarriersTransition[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        initialPyramidBarriersTransition[0].image = depthPyramidImage;
+        initialPyramidBarriersTransition[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        initialPyramidBarriersTransition[0].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+        initialPyramidBarriersTransition[0].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
         vkCmdPipelineBarrier(
             commandBuffers[i],
-            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+            VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_DEPENDENCY_BY_REGION_BIT,
             0,
             0,
-            VK_NULL_HANDLE,
             0,
-            VK_NULL_HANDLE,
             0,
-            VK_NULL_HANDLE);
+            initialPyramidBarriersTransition.size(),
+            initialPyramidBarriersTransition.data());
+
         // Bind the compute pipeline.
         vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
         // Bind descriptor set.
@@ -2668,9 +2748,19 @@ void VulkanObject::createCommandBuffers() {
                 &set,
                 0,
                 nullptr);
-            glm::vec2 reduceData = {
-                swapChainExtent.width / std::pow(2, depthPyramidLevel + 1),
-                swapChainExtent.height / std::pow(2, depthPyramidLevel + 1) };
+            glm::vec2 reduceData;
+            if (depthPyramidLevel == 0)
+            {
+                reduceData = {
+                    static_cast<float>(swapChainExtent.width) / 2.0f,
+                    static_cast<float>(swapChainExtent.height) / 2.0f };
+            }
+            else
+            {
+                reduceData = {
+                    getPow2Size(swapChainExtent.width, swapChainExtent.height) / std::pow(2, depthPyramidLevel + 1),
+                    getPow2Size(swapChainExtent.width, swapChainExtent.height) / std::pow(2, depthPyramidLevel + 1)};
+            }
 
             vkCmdPushConstants(
                 commandBuffers[i],
@@ -2682,8 +2772,8 @@ void VulkanObject::createCommandBuffers() {
             // Dispatch compute job.
             vkCmdDispatch(
                 commandBuffers[i],
-                std::max(1, static_cast<int>(swapChainExtent.width / 32 / std::pow(2, depthPyramidLevel + 1)) + 1),
-                std::max(1, static_cast<int>(swapChainExtent.height / 32 / std::pow(2, depthPyramidLevel + 1)) + 1),
+                std::max(uint32_t{1}, (static_cast<uint32_t>(swapChainExtent.width / std::pow(2, depthPyramidLevel + 1)) / 32) + 1),
+                std::max(uint32_t{1}, (static_cast<uint32_t>(swapChainExtent.height / std::pow(2, depthPyramidLevel + 1)) / 32) + 1),
                 1);
 
             VkImageMemoryBarrier reduceBarrier{};
@@ -2846,14 +2936,34 @@ void VulkanObject::drawFrame() {
     ImGui::SliderFloat("LOD level 1 max dist", &max_dists[1], max_dists[0], max_dists[2]);
     ImGui::SliderFloat("LOD level 2 max dist", &max_dists[2], max_dists[1], max_dists[3]);
     ImGui::SliderFloat("LOD level 3 max dist", &max_dists[3], max_dists[2], max_dists[4]);
-    ImGui::SliderFloat("LOD level 4 max dist", &max_dists[4], max_dists[3], 30.0f);
+    ImGui::SliderFloat("LOD level 4 max dist", &max_dists[4], max_dists[3], 50.0f);
     ImGui::RadioButton("normals", &display_mode, 0);
     ImGui::RadioButton("depth", &display_mode, 1);
     ImGui::RadioButton("specularity", &display_mode, 2);
     ImGui::RadioButton("albedo", &display_mode, 3);
     ImGui::RadioButton("shadow", &display_mode, 4);
     ImGui::RadioButton("position", &display_mode, 5);
-    ImGui::RadioButton("composed", &display_mode, 6); ImGui::SameLine();
+    bool pyramidJustActivated = ImGui::RadioButton("Depth pyramid", &display_mode, 6);
+    if(display_mode >= 6 && display_mode < 20)
+    {
+        if (pyramidJustActivated)
+        {
+            display_mode = 7;
+        }
+        ImGui::NewLine();
+        for (size_t lodLevel = 0; lodLevel < depthPyramidViews.size(); ++lodLevel)
+        {
+            std::string radioButtomName = "Mip " + std::to_string(lodLevel);
+            ImGui::Indent(1.0f); ImGui::SameLine();
+            ImGui::RadioButton(radioButtomName.c_str(), &display_mode, 7 + lodLevel);
+            if (lodLevel + 1 != depthPyramidViews.size())
+            {
+                ImGui::NewLine();
+            }
+            ImGui::Unindent(1.0f);
+        }
+    }
+    ImGui::RadioButton("composed", &display_mode, 20); ImGui::SameLine();
     ImGui::Checkbox("PCF", &pcf);
    
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
@@ -2983,6 +3093,10 @@ void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
     ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.001f, 20.0f);
     ubo.proj[1][1] *= -1;
 
+    ubo.p00 = ubo.proj[0][0];
+    ubo.p11 = ubo.proj[1][1];
+    ubo.zNear = 0.001f;
+
     ubo.light = glm::rotate(x_light_rotation, glm::vec3(1.0, 0.0, 0.0));
     ubo.light *= glm::rotate(y_light_rotation, glm::vec3(0.0, 1.0, 0.0));
     ubo.light *= glm::rotate(z_light_rotation, glm::vec3(0.0, 0.0, 1.0));
@@ -3030,6 +3144,7 @@ void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
 
 void VulkanObject::updateSSBO() {
     modelTransforms = std::make_unique<ModelTransforms>();
+    modelScales = std::make_unique<std::array<float, 10000>>();
 
     std::random_device dev;
     std::mt19937 rng(dev());
@@ -3042,7 +3157,9 @@ void VulkanObject::updateSSBO() {
     {
         glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(translation_dist(rng), translation_dist(rng), translation_dist(rng)))
             * glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, 0.0f));
-        glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0), glm::vec3(scale_dist(rng)));
+        float scale = scale_dist(rng);
+        modelScales->operator[](matrixIndex) = scale;
+        glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](matrixIndex)));
         glm::mat4 rotation_matrix = glm::rotate(rotation_dist(rng), glm::vec3(1.0f, 0.0f, 0.0f));
         rotation_matrix *= glm::rotate(rotation_dist(rng), glm::vec3(0.0f, 1.0f, 0.0f));
         rotation_matrix *= glm::rotate(rotation_dist(rng), glm::vec3(0.0f, 0.0f, 1.0f));
@@ -3054,6 +3171,11 @@ void VulkanObject::updateSSBO() {
     vkMapMemory(device, SSBOMemory, 0, sizeof(ModelTransforms), 0, &data);
     memcpy(data, modelTransforms.get(), sizeof(ModelTransforms));
     vkUnmapMemory(device, SSBOMemory);
+
+    data = nullptr;
+    vkMapMemory(device, scaleSSBOMemory, 0, sizeof(std::array<float, 10000>), 0, &data);
+    memcpy(data, modelScales.get(), sizeof(std::array<float, 10000>));
+    vkUnmapMemory(device, scaleSSBOMemory);
 
     updateLODSSBO();
 }

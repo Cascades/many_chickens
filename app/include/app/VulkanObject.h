@@ -106,6 +106,7 @@ private:
     VkImage depthPyramidImage;
     VkDeviceMemory depthPyramidMem;
     std::vector<VkImageView> depthPyramidViews;
+    VkImageView depthPyramidMultiMipView;
     std::vector<VkSampler> depthPyramidSamplers;
     std::vector<mc::DescriptorInfo<VkDescriptorImageInfo>> depthPyramidDescriptorInfo;
 
@@ -174,6 +175,8 @@ private:
 
     VkBuffer SSBO;
     VkDeviceMemory SSBOMemory;
+    VkBuffer scaleSSBO;
+    VkDeviceMemory scaleSSBOMemory;
     std::vector<VkBuffer> indirectLodSSBO;
     std::vector<VkDeviceMemory> indirectLodSSBOMemory;
     std::vector<VkBuffer> lodConfigSSBO;
@@ -184,6 +187,7 @@ private:
     };
 
     std::unique_ptr<ModelTransforms> modelTransforms;
+    std::unique_ptr<std::array<float, 10000>> modelScales;
 
     void createSSBOs();
 
@@ -253,7 +257,7 @@ private:
 
     void createTextureSampler();
 
-    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t baseMipLevel = 0);
+    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t baseMipLevel = 0, uint32_t levelCount = 1);
 
     void loadModel();
 
@@ -351,6 +355,8 @@ private:
     void updateSSBO();
 
     void updateLODSSBO();
+
+    uint32_t getPow2Size(uint32_t width, uint32_t height);
 
     // create a VkShaderModule to encapsulate our shaders
     VkShaderModule createShaderModule(const std::vector<char>& code);

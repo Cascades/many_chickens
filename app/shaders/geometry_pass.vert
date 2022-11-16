@@ -23,6 +23,9 @@ layout(std140, binding = 0) uniform UniformBufferObject {
 	float diffuse;
 	float ambient;
     float shadow_bias;
+    float p00;
+	float p11;
+	float zNear;
 	int display_mode;
 } ubo;
 
