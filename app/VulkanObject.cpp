@@ -324,6 +324,22 @@ void VulkanObject::createTextureSampler() {
     {
         throw std::runtime_error("failed to create depth sampler!");
     }
+
+    VkSamplerCreateInfo createNearestDepthInfo = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+
+    createNearestDepthInfo.magFilter = VK_FILTER_NEAREST;
+    createNearestDepthInfo.minFilter = VK_FILTER_NEAREST;
+    createNearestDepthInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    createNearestDepthInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    createNearestDepthInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    createNearestDepthInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    createNearestDepthInfo.minLod = 0;
+    createNearestDepthInfo.maxLod = 16.f;
+
+    if (vkCreateSampler(device, &createNearestDepthInfo, 0, &depthNearestSampler) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create depth sampler!");
+    }
 }
 
 VkImageView VulkanObject::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t baseMipLevel, uint32_t levelCount) {
@@ -1861,7 +1877,7 @@ void VulkanObject::createDescriptorSets() {
         }
 
         mc::DescriptorInfo<VkDescriptorImageInfo> depthMultiMipDescriptorInfo{
-            depthSampler,
+            depthNearestSampler,
             depthPyramidMultiMipView,
             VK_IMAGE_LAYOUT_GENERAL};
 
@@ -2932,6 +2948,11 @@ void VulkanObject::drawFrame() {
     ImGui::ColorEdit3("specular (Ks)", (float*)&dragon_model.Ks[0], flags);
     ImGui::ColorEdit3("emission (Ke)", (float*)&dragon_model.Ke[0], flags);
     auto& max_dists = dragon_model.getMaxDistances();
+    max_dists[0] = 0.0f;
+    max_dists[1] = 0.0f;
+    max_dists[2] = 2.2f;
+    max_dists[3] = 5.5f;
+    max_dists[4] = 50.0f;
     ImGui::SliderFloat("LOD level 0 max dist", &max_dists[0], 0.00f, max_dists[1]);
     ImGui::SliderFloat("LOD level 1 max dist", &max_dists[1], max_dists[0], max_dists[2]);
     ImGui::SliderFloat("LOD level 2 max dist", &max_dists[2], max_dists[1], max_dists[3]);

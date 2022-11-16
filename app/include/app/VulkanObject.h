@@ -219,6 +219,8 @@ private:
     VkImageView depthImageView;
     VkSampler depthSampler;
 
+    VkSampler depthNearestSampler;
+
     std::string MODEL_PATH;
     std::string TEXTURE_PATH;
 
