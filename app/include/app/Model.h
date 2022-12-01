@@ -147,6 +147,14 @@ public:
                 Ke = glm::vec3(0.0, 0.0, 0.0);
             }
         }
+
+        float maxDist = 0.0f;
+        for (auto const& vertex : vertices)
+        {
+            maxDist = std::max(maxDist, glm::length(vertex.pos));
+        }
+        std::cout << "MAX DISTTTTTT: " << maxDist << std::endl;
+
         generateLOD();
     }
 

@@ -38,6 +38,16 @@ layout (location = 0) in vec2 inUV;
 
 layout (location = 0) out vec4 outFragcolor;
 
+struct SphereProjectionDebugData
+{
+    vec4 projectedAABB;
+};
+
+layout(binding = 8) buffer SphereProjectionDebugBuffer
+{
+	SphereProjectionDebugData data[];
+} sphereProjectionDebugBuffer;
+
 float LinearizeDepth(float depth, float near_p, float far_p)
 {
     float z = depth * 2.0 - 1.0; // Back to NDC 
@@ -63,8 +73,15 @@ float calc_shadow_influence(vec4 position)
     return 1.0;
 }
 
+float insideBox(vec2 v, vec2 bottomLeft, vec2 topRight) {
+    vec2 s = step(bottomLeft, v) - step(topRight, v);
+    return s.x * s.y;   
+}
+
 void main() 
 {
+    vec4 tmpOutFragColor;
+
 	if(ubo.display_mode == 0)
 	{
 		outFragcolor = vec4(subpassLoad(inNormal).rgb, 1.0);
@@ -132,6 +149,7 @@ void main()
                     if(shadow_NDC.z > closest_dist + 0.00001)
                     {
                         outFragcolor = vec4(clamp(ubo.Ke.xyz + subpassLoad(inColor).rgb * (ubo.ambient * ubo.Ka.xyz), vec3(0.0), vec3(1.0)), 1.0);
+                        tmpOutFragColor = vec4(clamp(ubo.Ke.xyz + subpassLoad(inColor).rgb * (ubo.ambient * ubo.Ka.xyz), vec3(0.0), vec3(1.0)), 1.0);
                         return;
                     }
                 }
@@ -155,15 +173,48 @@ void main()
                 }
 
                 outFragcolor = vec4(clamp(ubo.Ke.xyz + subpassLoad(inColor).rgb * (ambient * ubo.Ka.xyz + diffuse * ubo.Kd.xyz + specular * ubo.Ks.xyz), vec3(0.0), vec3(1.0)), 1.0);
+                tmpOutFragColor = vec4(clamp(ubo.Ke.xyz + subpassLoad(inColor).rgb * (ambient * ubo.Ka.xyz + diffuse * ubo.Kd.xyz + specular * ubo.Ks.xyz), vec3(0.0), vec3(1.0)), 1.0);
              }
              else
              {
                 outFragcolor = vec4(subpassLoad(inColor).rgb, 1.0);
+                tmpOutFragColor = vec4(subpassLoad(inColor).rgb, 1.0);
              }
         }
         else
         {
             outFragcolor = vec4(0.0);
+            tmpOutFragColor = vec4(0.0);
         }
 	}
+
+    if(ubo.display_mode >= 20 && ubo.display_mode < 23)
+	{
+        vec2 clipSpace = vec2(inUV * 2.0 - 1.0);
+
+        float currentExtraRVal = 0.0f;
+
+        for (uint i = 0; i < sphereProjectionDebugBuffer.data.length(); ++i)
+        {
+            bool inBox = clipSpace.x < sphereProjectionDebugBuffer.data[i].projectedAABB[0] &&
+                         clipSpace.x > sphereProjectionDebugBuffer.data[i].projectedAABB[2] &&
+                         clipSpace.y < sphereProjectionDebugBuffer.data[i].projectedAABB[1] &&
+                         clipSpace.y > sphereProjectionDebugBuffer.data[i].projectedAABB[3];
+            bool tooFarInBox = clipSpace.x < sphereProjectionDebugBuffer.data[i].projectedAABB[0] - 0.002 &&
+                               clipSpace.x > sphereProjectionDebugBuffer.data[i].projectedAABB[2] + 0.002 &&
+                               clipSpace.y < sphereProjectionDebugBuffer.data[i].projectedAABB[1] - 0.002 &&
+                               clipSpace.y > sphereProjectionDebugBuffer.data[i].projectedAABB[3] + 0.002;
+            if(inBox && !tooFarInBox)
+            {
+                currentExtraRVal = 0.7;
+            }
+        }
+        
+        outFragcolor = vec4(
+            min(1.0, tmpOutFragColor.x + currentExtraRVal),
+            tmpOutFragColor.y,
+            tmpOutFragColor.z,
+            tmpOutFragColor.w);
+	}
+
 }

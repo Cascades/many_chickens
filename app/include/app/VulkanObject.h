@@ -130,7 +130,8 @@ private:
 	
     // render pass object
     VkRenderPass renderPass;
-    VkRenderPass geometryPass;
+    VkRenderPass earlyGeometryPass;
+    VkRenderPass lateGeometryPass;
     VkRenderPass imgui_render_pass;
     //VkDescriptorSetLayout descriptorSetLayout;
     //VkDescriptorSetLayout lightingSetLayout;
@@ -143,6 +144,7 @@ private:
     VkPipeline computePipeline;
     VkPipeline depthPyramidComputePipeline;
     VkPipeline graphicsPipeline;
+    VkPipeline lateGraphicsPipeline;
     VkPipeline lightingPipeline;
     VkPipeline shadowPipeline;
 
@@ -181,13 +183,19 @@ private:
     std::vector<VkDeviceMemory> indirectLodSSBOMemory;
     std::vector<VkBuffer> lodConfigSSBO;
     std::vector<VkDeviceMemory> lodConfigSSBOMemory;
+    std::vector<VkBuffer> drawnLastFrameSSBO;
+    std::vector<VkDeviceMemory> drawnLastFrameSSBOMemory;
+    std::vector<VkBuffer> sphereProjectionDebugSSBO;
+    std::vector<VkDeviceMemory> sphereProjectionDebugSSBOMemory;
+
+    static constexpr size_t chickenCount = 64;
 
     struct ModelTransforms {
-        std::array<glm::mat4, 10000> modelMatricies{};
+        std::array<glm::mat4, chickenCount> modelMatricies{};
     };
 
     std::unique_ptr<ModelTransforms> modelTransforms;
-    std::unique_ptr<std::array<float, 10000>> modelScales;
+    std::unique_ptr<std::array<float, chickenCount>> modelScales;
 
     void createSSBOs();
 
@@ -246,7 +254,9 @@ private:
     bool pcf = false;
 
     void createImguiPass();
-    void createGeometryPass();
+    void createGeometryPass(bool clearAttachmentsOnLoad, VkRenderPass& renderPass);
+    void createEarlyGeometryPass();
+    void createLateGeometryPass();
     void createShadowPass();
 	
     VkFormat findDepthFormat();

@@ -62,7 +62,14 @@ void main() {
     // TODO: make the chickens spin!
     mat4 rotMat = rotationMatrix(normalize(vec3(0.1, 0.2, 0.3)), 25.0);
 
-    gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[gl_DrawIDARB] * rotMat * vec4(inPosition, 1.0);
+    if (ubo.display_mode == 22)
+    {
+        gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[gl_DrawIDARB] * rotMat * vec4(normalize(inPosition) * 0.351285, 1.0);
+    }
+    else
+    {
+        gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[gl_DrawIDARB] * rotMat * vec4(inPosition, 1.0);
+    }
 
     outNormal = inNormal;
 
