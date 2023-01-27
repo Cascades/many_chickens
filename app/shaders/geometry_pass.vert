@@ -44,6 +44,7 @@ layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec2 fragTexCoord;
 layout(location = 3) out float texture_on;
 layout(location = 4) out float specularity;
+layout(location = 5) flat out uint ID;
 
 mat4 rotationMatrix(vec3 axis, float angle)
 {
@@ -79,4 +80,5 @@ void main() {
 
     fragTexCoord = inTexCoord;
     texture_on = int(ubo.texture_stage_on);
+    ID = gl_DrawIDARB;
 }

@@ -21,6 +21,7 @@ void main()
 
 	if (pos.x > frame_size.x || pos.y > frame_size.y)
 	{
+		imageStore(outImage, ivec2(pos), vec4(1234.0));
 		return;
 	}
 

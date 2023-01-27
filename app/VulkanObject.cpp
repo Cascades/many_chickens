@@ -340,6 +340,28 @@ void VulkanObject::createTextureSampler() {
     {
         throw std::runtime_error("failed to create depth sampler!");
     }
+
+    VkSamplerCreateInfo createNearestMinDepthInfo = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+
+    createNearestMinDepthInfo.magFilter = VK_FILTER_NEAREST;
+    createNearestMinDepthInfo.minFilter = VK_FILTER_NEAREST;
+    createNearestMinDepthInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    createNearestMinDepthInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    createNearestMinDepthInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    createNearestMinDepthInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    createNearestMinDepthInfo.minLod = 0;
+    createNearestMinDepthInfo.maxLod = 16.f;
+
+    createInfoReduction = { VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO_EXT };
+
+    createInfoReduction.reductionMode = VK_SAMPLER_REDUCTION_MODE_MIN;
+
+    createNearestMinDepthInfo.pNext = &createInfoReduction;
+
+    if (vkCreateSampler(device, &createNearestMinDepthInfo, 0, &depthNearestMinSampler) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create depth sampler!");
+    }
 }
 
 VkImageView VulkanObject::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t baseMipLevel, uint32_t levelCount) {
@@ -617,7 +639,16 @@ void VulkanObject::createSSBOs() {
             drawnLastFrameSSBOMemory[i]);
     }
 
-    bufferSize = modelTransforms->modelMatricies.size() * sizeof(glm::vec4);
+    struct sphereProjectionDebugData
+    {
+        alignas(16) glm::vec4 aabb;
+        //alignas(16) glm::vec4 depthData;
+        //glm::vec2 depthData;
+        //glm::vec2 depthLookUpCoord;
+        //uint32_t lodLevel;
+    };
+
+    bufferSize = modelTransforms->modelMatricies.size() * sizeof(sphereProjectionDebugData);
 
     sphereProjectionDebugSSBO.resize(swapChainImages.size());
     sphereProjectionDebugSSBOMemory.resize(swapChainImages.size());
@@ -1965,6 +1996,11 @@ void VulkanObject::createDescriptorSets() {
             depthPyramidMultiMipView,
             VK_IMAGE_LAYOUT_GENERAL};
 
+        mc::DescriptorInfo<VkDescriptorImageInfo> depthMultiMipReduceDescriptorInfo{
+            depthNearestMinSampler,
+            depthPyramidMultiMipView,
+            VK_IMAGE_LAYOUT_GENERAL };
+
         std::array<VkWriteDescriptorSet, 8> computeDescriptorWrites{};
 
         computeDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2013,7 +2049,7 @@ void VulkanObject::createDescriptorSets() {
         computeDescriptorWrites[5].dstArrayElement = 0;
         computeDescriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         computeDescriptorWrites[5].descriptorCount = 1;
-        computeDescriptorWrites[5].pImageInfo = depthMultiMipDescriptorInfo.getPtr();
+        computeDescriptorWrites[5].pImageInfo = depthMultiMipReduceDescriptorInfo.getPtr();
 
         computeDescriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         computeDescriptorWrites[6].dstSet = computeDescriptorSets[i];
@@ -2038,7 +2074,7 @@ void VulkanObject::createDescriptorSets() {
             0,
             nullptr);
 
-        std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
+        std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = descriptorSets[i];
@@ -2063,6 +2099,14 @@ void VulkanObject::createDescriptorSets() {
         descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         descriptorWrites[2].descriptorCount = 1;
         descriptorWrites[2].pBufferInfo = ssboInfo.getPtr();
+
+        descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[3].dstSet = descriptorSets[i];
+        descriptorWrites[3].dstBinding = 3;
+        descriptorWrites[3].dstArrayElement = 0;
+        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[3].descriptorCount = 1;
+        descriptorWrites[3].pBufferInfo = sphereProjectionDebugSsboInfo.getPtr();
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
@@ -3176,7 +3220,8 @@ void VulkanObject::drawFrame() {
         ImGui::RadioButton("chicken balls", &display_mode, 22);
         ImGui::Unindent(1.0f);
     }
-    ImGui::RadioButton("composed", &display_mode, 21); ImGui::SameLine();
+    ImGui::RadioButton("lodLevel", &display_mode, 23);
+    ImGui::RadioButton("composed", &display_mode, 24); ImGui::SameLine();
     ImGui::Checkbox("PCF", &pcf);
    
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
@@ -3303,7 +3348,7 @@ void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
     ubo.model = translation_matrix * rotation_matrix * scale_matrix;
     //ubo.view = glm::lookAt(glm::vec3(camera_rotation_matrix * glm::vec4(-2.0f, 0.0f, 0.0f, 1.0f)), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.view = camera->GetViewMatrix();
-    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.001f, 100.0f);
+    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.001f, 250.0f);
     ubo.proj[1][1] *= -1;
 
     ubo.p00 = ubo.proj[0][0];

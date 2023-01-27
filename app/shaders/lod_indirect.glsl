@@ -77,124 +77,78 @@ layout(binding = 6) buffer DrawnLastFrameBuffer
 struct SphereProjectionDebugData
 {
     vec4 projectedAABB;
+    //vec4 depthData;
+    //vec2 depthData;
+    //vec2 depthLookUpCoord;
+    //uint lodLevel;
 };
 
-layout(binding = 7) buffer SphereProjectionDebugBuffer
+layout(std430, binding = 7) buffer SphereProjectionDebugBuffer
 {
 	SphereProjectionDebugData data[];
 } sphereProjectionDebugBuffer;
 
-// 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
-bool projectSphere(vec3 C, float r, float znear, float P00, float P11, out vec4 aabb)
-{
-    if (C.z < r + znear)
-        return false;
-
-    vec2 cx = -C.xz;
-    vec2 vx = vec2(sqrt(dot(cx, cx) - r * r), r);
-    vec2 minx = mat2(vx.x, vx.y, -vx.y, vx.x) * cx;
-    vec2 maxx = mat2(vx.x, -vx.y, vx.y, vx.x) * cx;
-
-    vec2 cy = -C.yz;
-    vec2 vy = vec2(sqrt(dot(cy, cy) - r * r), r);
-    vec2 miny = mat2(vy.x, vy.y, -vy.y, vy.x) * cy;
-    vec2 maxy = mat2(vy.x, -vy.y, vy.y, vy.x) * cy;
-
-    aabb = vec4(minx.x / minx.y * P00, miny.x / miny.y * P11, maxx.x / maxx.y * P00, maxy.x / maxy.y * P11);
-    aabb = aabb.xwzy * vec4(-0.5f, 0.5f, -0.5f, 0.5f) + vec4(0.5f); // clip space -> uv space
-
-    return true;
-}
-
-void getBoundsForAxis(
-    vec3 a, // Bounding axis (camera space)
-    vec3 C, // Sphere center (camera space)
-    float r, // Sphere radius
-    vec3 projCenter, 
-    float nearZ, // Near clipping plane (negative)
-    out vec3 L, // Tangent point (camera space)
-    out vec3 U) // Tangent point (camera space)
-{
-    vec2 c = vec2(dot(a, C), C.z); // C in the a-z frame
-
-    vec2 bounds[2]; // In the a-z reference frame
-
-    float tSquared = dot(c, c) - (r * r);
-    bool cameraInsideSphere = (tSquared <= 0);
-
-    // (cos, sin) of angle theta between c and a tangent vector
-    vec2 v = cameraInsideSphere ? vec2(0.0f, 0.0f) : vec2(sqrt(tSquared), r) / c.length();
-    //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(v, v);
-
-    // Does the near plane intersect the sphere?
-    bool clipSphere = (c.y + r >= nearZ);
-
-    // Square root of the discriminant; NaN (and unused)
-    // if the camera is in the sphere
-    float k = sqrt((r * r) - pow((nearZ - c.y), 2));
-
-    for (int i = 0; i < 2; ++i)
-    {
-        if (!cameraInsideSphere)
-        {
-            bounds[i] = mat2(v.x, -v.y,
-                             v.y, v.x) * c * v.x;
-        }
-
-        bool clipBound = cameraInsideSphere || (bounds[i].y > nearZ);
-
-        if (clipSphere && clipBound)
-        {
-            bounds[i] = vec2(projCenter.x + k, nearZ);
-        }
-
-        // Set up for the lower bound
-        v.y = -v.y; k = -k;
-    }
-
-    // Transform back to camera space
-    L = bounds[1].x * a; L.z = bounds[1].y;
-    U = bounds[0].x * a; U.z = bounds[0].y;
-}
-
-
 vec3 project(mat4 P, vec3 Q)
 {
-    vec4 v = P * vec4(Q, 1.0f);
+    vec4 v = P * vec4(Q, 1.0);
     return v.xyz / v.w;
 }
 
-vec3 project(mat4 P, vec4 Q)
-{
-    vec4 v = P * Q;
-    return v.xyz / v.w;
-}
-
-vec4 getAxisAlignedBoundingBox(
+// 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
+bool getAxisAlignedBoundingBox(
     vec3 C, // camera-space sphere center
     float r, // sphere radius
     float nearZ, // near clipping plane position (negative)
-    mat4 P) // camera to screen space
+    mat4 P,
+    out vec4 AABB) // camera to screen space
 {
-    // Points on edges
-    vec3 right;
-    vec3 left;
-    vec3 top;
-    vec3 bottom;
+    if (length(C) - r < nearZ)
+    {
+        return false;
+    }
 
-    getBoundsForAxis(vec3(1,0,0), C, r, project(P, C), nearZ, left, right);
-    getBoundsForAxis(vec3(0,1,0), C, r, project(P, C), nearZ, bottom, top);
+    vec2 cx = vec2(dot(vec3(1,0,0), C), C.z); // C in the a-z frame
+    float tSquaredx = dot(cx, cx) - (r * r);
+    vec2 vx = vec2(sqrt(tSquaredx), r) / length(cx); // (cos, sin) of angle theta between c and a tangent vector
 
-    float projRight = project(P, right).x;
-    float projLeft = project(P, left).x;
-    float projTop = project(P, top).y;
-    float projBottom = project(P, bottom).y;
+    vec2 boundsx[2];
+    boundsx[0] = mat2(vx.x, -vx.y, vx.y, vx.x) * cx * vx.x;
+    boundsx[1] = mat2(vx.x, vx.y, -vx.y, vx.x) * cx * vx.x;
 
-    return vec4(
-        max(projLeft, projRight),
-        min(projBottom, projTop),
-        min(projLeft, projRight),
-        max(projBottom, projTop)).xwzy;
+    // Transform back to camera space
+    vec3 left = boundsx[1].x * vec3(1,0,0); left.z = boundsx[1].y;
+    vec3 right = boundsx[0].x * vec3(1,0,0); right.z = boundsx[0].y;
+
+    vec2 cy = vec2(dot(vec3(0,1,0), C), C.z); // C in the a-z frame
+    float tSquaredy = dot(cy, cy) - (r * r);
+    vec2 vy = vec2(sqrt(tSquaredy), r) / length(cy); // (cos, sin) of angle theta between c and a tangent vector
+
+    vec2 boundsy[2]; // In the a-z reference frame
+    boundsy[0] = mat2(vy.x, -vy.y, vy.y, vy.x) * cy * vy.x;
+    boundsy[1] = mat2(vy.x, vy.y, -vy.y, vy.x) * cy * vy.x;
+
+    // Transform back to camera space
+    vec3 bottom = boundsy[1].x * vec3(0,1,0); bottom.z = boundsy[1].y;
+    vec3 top = boundsy[0].x * vec3(0,1,0); top.z = boundsy[0].y;
+
+    AABB = vec4(
+        project(P, left).x,
+        project(P, top).y,
+        project(P, right).x,
+        project(P, bottom).y
+        );
+    return true;
+}
+
+//float LinearizeDepth(float depth, float near_p, float far_p)
+//{
+//    float z = depth * 2.0 - 1.0; // Back to NDC 
+//    return (2.0 * near_p * far_p) / (far_p + near_p - z * (far_p - near_p));
+//}
+
+float LinearizeDepth(float d, float zNear, float zFar)
+{
+    return (2.0 * zNear) / (zFar + zNear - d * (zFar - zNear));
 }
 
 void main()
@@ -215,14 +169,12 @@ void main()
 
     float xyRatio = ubo.win_dim.x / ubo.win_dim.y;
 
-    vec4 aabb = getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.proj);
-    /*bool projectionSuccess = projectSphere(mvPos.xyz, radius, ubo.zNear, ubo.p00, -ubo.p11, aabb);
+    vec4 aabb;
+    bool projectionSuccess = getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.proj, aabb);
     if (projectionSuccess)
     {
-        float width = (aabb.z - aabb.x) * 2048;
-        float height = (aabb.w - aabb.y) * 2048;
-
-        float level = floor(log2(max(width, height)));
+        vec4 OG_aabb = ((aabb + 1.0) * 0.5);
+        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
 
         vec2 frame_size = ubo.win_dim;
 
@@ -232,14 +184,49 @@ void main()
 	    vec2 real_size = vec2(max(real_width, real_height));
 
 	    vec2 scaling_factor = real_size / frame_size;
+        aabb = ((aabb + 1.0) * 0.5) / vec4(scaling_factor, scaling_factor);
+        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
 
-        // Sampler is set up to do min reduction, so this computes the minimum depth of a 2x2 texel quad
-        float depth = textureLod(inDepthPyramid, ((aabb.xy + aabb.zw) * 0.5) / scaling_factor, level).x;
-        float depthSphere = ubo.zNear / (mvPos.z - radius);
+        float width = (aabb[0] - aabb[2]) * real_width;
+        float height = (aabb[1] - aabb[3]) * real_height;
 
-        //visible = visible && depthSphere > depth;
-    }*/
-    sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
+        float level = floor(log2(max(width, height)));
+
+        vec2 lodLookupCoord = vec2(aabb.xy + aabb.zw) * 0.5;
+        //lodLookupCoord /= scaling_factor;
+        vec2 modifiedlodLookupCoord = (floor((lodLookupCoord * frame_size) / pow(2, level)) * pow(2, level)) / frame_size;
+
+        if (lodLookupCoord.x < 0.0 || lodLookupCoord.x > (1.0 / scaling_factor.x) ||
+            lodLookupCoord.y < 0.0 || lodLookupCoord.y > (1.0 / scaling_factor.y))
+        {
+            sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(1.0);
+        }
+        else
+        {
+            // Sampler is set up to do min reduction, so this computes the minimum depth of a 2x2 texel quad
+            float originalDepth = textureLod(inDepthPyramid, lodLookupCoord, level).x;
+            float linearlizedDepth = LinearizeDepth(originalDepth, 0.001, 250.0);
+            float depth = 0.001 + (250.0 - 0.001) * linearlizedDepth;
+            float depthSphere = -1 * (mvPos.z - radius - ubo.zNear);
+
+            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].depthData = vec4(lodLookupCoord, vec2(depth, depthSphere));
+
+            /*visible = visible && depthSphere > depth;*/
+            sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(lodLookupCoord, vec2(originalDepth, linearlizedDepth));
+            vec2 pixel_size = vec2(pow(2, level)) / frame_size;
+            //vec2 lodOGLookupCoord = vec2(OG_aabb.xy + OG_aabb.zw) * 0.5;
+            //vec2 modifiedOGlodLookupCoordFloor = (floor((lodOGLookupCoord * real_size) / pow(2, level)) * pow(2, level)) / real_size;
+            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(lodLookupCoord,
+            //                                                                               lodLookupCoord + pixel_size);
+            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
+            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].lodLevel = uint(level);
+        }
+    }
+    else
+    {
+        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(1.0);
+        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].lodLevel = 9;
+    }
 
     //drawnLastFrameBuffer.data[gl_GlobalInvocationID.x] = visible;
 
@@ -257,6 +244,8 @@ void main()
             break;
         }
     }
+
+    lod_index = min(lod_index, lodConfigData.data.length() - 1);
 
     uint indexCount = mix(0, lodConfigData.data[lod_index].size, visible);
     uint firstIndex = mix(0, lodConfigData.data[lod_index].offset, visible);

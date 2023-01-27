@@ -188,7 +188,7 @@ private:
     std::vector<VkBuffer> sphereProjectionDebugSSBO;
     std::vector<VkDeviceMemory> sphereProjectionDebugSSBOMemory;
 
-    static constexpr size_t chickenCount = 64;
+    static constexpr size_t chickenCount = 10;
 
     struct ModelTransforms {
         std::array<glm::mat4, chickenCount> modelMatricies{};
@@ -228,6 +228,7 @@ private:
     VkSampler depthSampler;
 
     VkSampler depthNearestSampler;
+    VkSampler depthNearestMinSampler;
 
     std::string MODEL_PATH;
     std::string TEXTURE_PATH;
