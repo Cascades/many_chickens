@@ -2196,7 +2196,7 @@ void VulkanObject::createComputePipeline()
             device,
             "../shaders/vulkan3/lod_indirect.spv",
             VK_SHADER_STAGE_COMPUTE_BIT);
-        computeProgram = std::make_shared<mc::ShaderProgram>(device, mc::Shaders{ lodIndirectShaderModule });
+        computeProgram = std::make_shared<mc::ShaderProgram>(device, mc::Shaders{ lodIndirectShaderModule }, sizeof(vk::Bool32));
 
         VkComputePipelineCreateInfo info = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
         info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2700,6 +2700,14 @@ void VulkanObject::createCommandBuffers() {
         // Bind descriptor set.
         vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computeProgram->getLayout(), 0, 1,
             &computeDescriptorSets[i], 0, nullptr);
+        vk::Bool32 cullStageConstant = true;
+        vkCmdPushConstants(
+            commandBuffers[i],
+            computeProgram->getLayout(),
+            computeProgram->getPushConstantStages(),
+            0,
+            sizeof(cullStageConstant),
+            &cullStageConstant);
         // Dispatch compute job.
         vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
         // Barrier between compute and vertex shading.
@@ -3007,6 +3015,14 @@ void VulkanObject::createCommandBuffers() {
         // Bind descriptor set.
         vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computeProgram->getLayout(), 0, 1,
             &computeDescriptorSets[i], 0, nullptr);
+        cullStageConstant = false;
+        vkCmdPushConstants(
+            commandBuffers[i],
+            computeProgram->getLayout(),
+            computeProgram->getPushConstantStages(),
+            0,
+            sizeof(cullStageConstant),
+            &cullStageConstant);
         // Dispatch compute job.
         vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
         // Barrier between compute and vertex shading.
@@ -3436,6 +3452,20 @@ void VulkanObject::updateSSBO() {
     vkUnmapMemory(device, scaleSSBOMemory);
 
     updateLODSSBO();
+
+    drawnLastFrameSSBO.resize(swapChainImages.size());
+    drawnLastFrameSSBOMemory.resize(swapChainImages.size());
+
+    auto zerodVisibility = std::make_unique<std::array<vk::Bool32, chickenCount>>();
+    zerodVisibility->fill(false);
+
+    for (size_t i = 0; i < swapChainImages.size(); i++)
+    {
+        data = nullptr;
+        vkMapMemory(device, drawnLastFrameSSBOMemory[i], 0, chickenCount * sizeof(vk::Bool32), 0, &data);
+        memcpy(data, zerodVisibility.get(), chickenCount * sizeof(vk::Bool32));
+        vkUnmapMemory(device, drawnLastFrameSSBOMemory[i]);
+    }
 }
 
 void VulkanObject::updateLODSSBO()

@@ -129,7 +129,7 @@ void main()
 
 	    vec2 scaling_factor = real_size / frame_size;
 
-        float depth_val = LinearizeDepth(textureLod(inDepthPyramid, inUV / scaling_factor, ubo.display_mode - 7).r, 0.001, 250.0) / 250.0;
+        float depth_val = LinearizeDepth(textureLod(inDepthPyramid, inUV / scaling_factor, ubo.display_mode - 7).r, -0.001, -250.0) / 250.0;
 		outFragcolor = vec4(depth_val, depth_val, depth_val, 1.0);
 	}
 	else
