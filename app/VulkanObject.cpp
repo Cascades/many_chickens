@@ -630,14 +630,14 @@ void VulkanObject::createSSBOs() {
     drawnLastFrameSSBO.resize(swapChainImages.size());
     drawnLastFrameSSBOMemory.resize(swapChainImages.size());
 
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
+    //for (size_t i = 0; i < swapChainImages.size(); i++) {
         createBuffer(
             bufferSize,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            drawnLastFrameSSBO[i],
-            drawnLastFrameSSBOMemory[i]);
-    }
+            drawnLastFrameSSBO[0],
+            drawnLastFrameSSBOMemory[0]);
+    //}
 
     struct sphereProjectionDebugData
     {
@@ -929,8 +929,8 @@ void VulkanObject::cleanupSwapChain() {
         vkFreeMemory(device, indirectLodSSBOMemory[i], nullptr);
         vkDestroyBuffer(device, lodConfigSSBO[i], nullptr);
         vkFreeMemory(device, lodConfigSSBOMemory[i], nullptr);
-        vkDestroyBuffer(device, drawnLastFrameSSBO[i], nullptr);
-        vkFreeMemory(device, drawnLastFrameSSBOMemory[i], nullptr);
+        vkDestroyBuffer(device, drawnLastFrameSSBO[0], nullptr);
+        vkFreeMemory(device, drawnLastFrameSSBOMemory[0], nullptr);
         vkDestroyBuffer(device, sphereProjectionDebugSSBO[i], nullptr);
         vkFreeMemory(device, sphereProjectionDebugSSBOMemory[i], nullptr);
     }
@@ -1942,7 +1942,7 @@ void VulkanObject::createDescriptorSets() {
             dragon_model.getTotalLodLevels() * sizeof(LodConfigData)};
 
         mc::DescriptorInfo<VkDescriptorBufferInfo> drawnLastFrameSsboInfo{
-            drawnLastFrameSSBO[i],
+            drawnLastFrameSSBO[0],
             0,
             modelTransforms->modelMatricies.size() * sizeof(uint32_t)};
 
@@ -3423,7 +3423,7 @@ void VulkanObject::updateSSBO() {
     std::random_device dev;
     std::mt19937 rng(dev());
     std::uniform_real_distribution<float> translation_dist(-5.0f, 5.0f);
-    std::uniform_real_distribution<float> scale_dist(0.5f, 2.0f);
+    std::uniform_real_distribution<float> scale_dist(0.1f, 5.0f);
     std::uniform_real_distribution<float> rotation_dist(0.0f, 2.0f * glm::pi<float>());
 
     //std::fill(std::begin(ssbo->modelMatricies), std::end(ssbo->modelMatricies), glm::mat4{ 1.0f });
@@ -3453,19 +3453,21 @@ void VulkanObject::updateSSBO() {
 
     updateLODSSBO();
 
+
+    std::cout << "Updating drawnLastFrameBuffer" << std::endl;
     drawnLastFrameSSBO.resize(swapChainImages.size());
     drawnLastFrameSSBOMemory.resize(swapChainImages.size());
 
     auto zerodVisibility = std::make_unique<std::array<vk::Bool32, chickenCount>>();
     zerodVisibility->fill(false);
 
-    for (size_t i = 0; i < swapChainImages.size(); i++)
-    {
+    //for (size_t i = 0; i < swapChainImages.size(); i++)
+    //{
         data = nullptr;
-        vkMapMemory(device, drawnLastFrameSSBOMemory[i], 0, chickenCount * sizeof(vk::Bool32), 0, &data);
+        vkMapMemory(device, drawnLastFrameSSBOMemory[0], 0, chickenCount * sizeof(vk::Bool32), 0, &data);
         memcpy(data, zerodVisibility.get(), chickenCount * sizeof(vk::Bool32));
-        vkUnmapMemory(device, drawnLastFrameSSBOMemory[i]);
-    }
+        vkUnmapMemory(device, drawnLastFrameSSBOMemory[0]);
+    //}
 }
 
 void VulkanObject::updateLODSSBO()
