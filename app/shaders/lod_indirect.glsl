@@ -331,14 +331,46 @@ void main()
         return;
     }
 
-    if (EARLY)
+    if (ubo.display_mode == 25)
     {
-        early();
-        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(123.0, 456.0, 789.0, 123.0);
+        vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
+        vec4 mvPos = ubo.view * modelPos;
+        mvPos = vec4(mvPos.xyz / mvPos.w, 1.0);
+
+        float dist = length(mvPos);
+
+        uint lod_index = lodConfigData.data.length();
+
+        for(uint curr_lod_index = 0; curr_lod_index < lodConfigData.data.length() - 1; ++curr_lod_index)
+        {
+            float curr_lod_max_dist = lodConfigData.data[curr_lod_index].maxDist;
+            float next_lod_max_dist = lodConfigData.data[curr_lod_index + 1].maxDist;
+            if(dist > curr_lod_max_dist && dist <= next_lod_max_dist)
+            {
+                lod_index = curr_lod_index + 1;
+                break;
+            }
+        }
+
+        lod_index = min(lod_index, lodConfigData.data.length() - 1);
+
+        indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = lodConfigData.data[lod_index].size;
+        indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = 1;
+        indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = lodConfigData.data[lod_index].offset;
+        indirectBuffer.data[gl_GlobalInvocationID.x].vertexOffset = 0;
+        indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
     }
     else
     {
-        late();
-        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(111.0, 222.0, 333.0, 444.0);
+        if (EARLY)
+        {
+            early();
+            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(123.0, 456.0, 789.0, 123.0);
+        }
+        else
+        {
+            late();
+            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(111.0, 222.0, 333.0, 444.0);
+        }
     }
 }

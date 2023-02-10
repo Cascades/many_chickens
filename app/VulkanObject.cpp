@@ -3237,7 +3237,8 @@ void VulkanObject::drawFrame() {
         ImGui::Unindent(1.0f);
     }
     ImGui::RadioButton("lodLevel", &display_mode, 23);
-    ImGui::RadioButton("composed", &display_mode, 24); ImGui::SameLine();
+    ImGui::RadioButton("composed", &display_mode, 24);
+    ImGui::RadioButton("composed no OC", &display_mode, 25); ImGui::SameLine();
     ImGui::Checkbox("PCF", &pcf);
    
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);

@@ -248,5 +248,4 @@ void main()
             tmpOutFragColor.z,
             tmpOutFragColor.w);
 	}
-
 }
