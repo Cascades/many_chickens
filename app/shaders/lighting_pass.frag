@@ -41,10 +41,7 @@ layout (location = 0) out vec4 outFragcolor;
 struct SphereProjectionDebugData
 {
     vec4 projectedAABB;
-    //vec4 depthData;
-    //vec2 depthData;
-    //vec2 depthLookUpCoord;
-    //uint lodLevel;
+    vec4 depthData;
 };
 
 layout(std430, binding = 8) buffer SphereProjectionDebugBuffer
@@ -52,15 +49,8 @@ layout(std430, binding = 8) buffer SphereProjectionDebugBuffer
 	SphereProjectionDebugData data[];
 } sphereProjectionDebugBuffer;
 
-//float LinearizeDepth(float depth, float near_p, float far_p)
-//{
-//    float z = depth;// * 2.0 - 1.0; // Back to NDC 
-//    return (2.0 * near_p * far_p) / (far_p + near_p - z * (far_p - near_p));
-//}
-
-float LinearizeDepth(float z, float n, float f) {
-    //return ((f * n)/(z + (f / (n - f)))) * (1/(f - n));
-    // equivelant to
+float linearizeDepth(float z, float n, float f)
+{
     return (f * n)/(f * z - f - n * z);
 }
 
@@ -98,7 +88,7 @@ void main()
 	}
 	else if(ubo.display_mode == 1)
 	{
-        float z = LinearizeDepth(subpassLoad(inDepth).r, -0.001, -250.0) / (250.0);
+        float z = linearizeDepth(subpassLoad(inDepth).r, -1.0, -250.0) / (250.0);
 		outFragcolor = vec4(z, z, z,  1.0);
 	}
 	else if(ubo.display_mode == 2)
@@ -111,7 +101,7 @@ void main()
 	}
     else if(ubo.display_mode == 4)
 	{
-        float depth_val = LinearizeDepth(texture(inShadowDepth, inUV).r, 0.001, 250.0) / 250.0;
+        float depth_val = linearizeDepth(texture(inShadowDepth, inUV).r, 1.0, 250.0) / 250.0;
 		outFragcolor = vec4(depth_val, depth_val, depth_val, 1.0);
 	}
     else if(ubo.display_mode == 5)
@@ -129,8 +119,12 @@ void main()
 
 	    vec2 scaling_factor = real_size / frame_size;
 
-        float depth_val = LinearizeDepth(textureLod(inDepthPyramid, inUV / scaling_factor, ubo.display_mode - 7).r, -0.001, -250.0) / 250.0;
+        float depth_val = linearizeDepth(textureLod(inDepthPyramid, inUV / scaling_factor, ubo.display_mode - 7).r, -1.0, -250.0) / 250.0;
 		outFragcolor = vec4(depth_val, depth_val, depth_val, 1.0);
+        if(textureLod(inDepthPyramid, inUV / scaling_factor, ubo.display_mode - 7).r == 1.0)
+        {
+            outFragcolor = vec4(1.0, 0.0, 0.0, 1.0);
+        }
 	}
 	else
 	{
@@ -225,27 +219,5 @@ void main()
             tmpOutFragColor.y,
             tmpOutFragColor.z,
             tmpOutFragColor.w);
-        
-        /*float currentExtraRVal = 0.0f;
-
-        for (uint i = 0; i < sphereProjectionDebugBuffer.data.length(); ++i)
-        {
-            float lod_level = int(sphereProjectionDebugBuffer.data[i].projectedAABB[3]);
-            float pixel_size = pow(2.0, lod_level);
-            bool inBox = inUV.x > sphereProjectionDebugBuffer.data[i].projectedAABB[0] &&
-                         inUV.x < sphereProjectionDebugBuffer.data[i].projectedAABB[2] &&
-                         inUV.y > sphereProjectionDebugBuffer.data[i].projectedAABB[1] &&
-                         inUV.y < sphereProjectionDebugBuffer.data[i].projectedAABB[3];
-            if(inBox)
-            {
-                currentExtraRVal = 0.7;
-            }
-        }
-        
-        outFragcolor = vec4(
-            min(1.0, tmpOutFragColor.x + currentExtraRVal),
-            tmpOutFragColor.y,
-            tmpOutFragColor.z,
-            tmpOutFragColor.w);*/
 	}
 }

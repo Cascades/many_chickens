@@ -42,10 +42,7 @@ layout(std140, binding = 0) uniform UniformBufferObject {
 struct SphereProjectionDebugData
 {
     vec4 projectedAABB;
-    //vec4 depthData;
-    //vec2 depthData;
-    //vec2 depthLookUpCoord;
-    //uint lodLevel;
+    vec4 depthData;
 };
 
 layout(std430, binding = 3) buffer SphereProjectionDebugBuffer

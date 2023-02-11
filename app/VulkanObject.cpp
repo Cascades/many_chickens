@@ -641,11 +641,8 @@ void VulkanObject::createSSBOs() {
 
     struct sphereProjectionDebugData
     {
-        alignas(16) glm::vec4 aabb;
-        //alignas(16) glm::vec4 depthData;
-        //glm::vec2 depthData;
-        //glm::vec2 depthLookUpCoord;
-        //uint32_t lodLevel;
+        glm::vec4 aabb;
+        glm::vec4 depthData;
     };
 
     bufferSize = modelTransforms->modelMatricies.size() * sizeof(sphereProjectionDebugData);
@@ -3365,12 +3362,12 @@ void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
     ubo.model = translation_matrix * rotation_matrix * scale_matrix;
     //ubo.view = glm::lookAt(glm::vec3(camera_rotation_matrix * glm::vec4(-2.0f, 0.0f, 0.0f, 1.0f)), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.view = camera->GetViewMatrix();
-    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.001f, 250.0f);
+    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 1.0f, 250.0f);
     ubo.proj[1][1] *= -1;
 
     ubo.p00 = ubo.proj[0][0];
     ubo.p11 = ubo.proj[1][1];
-    ubo.zNear = 0.001f;
+    ubo.zNear = 1.0f;
 
     ubo.light = glm::rotate(x_light_rotation, glm::vec3(1.0, 0.0, 0.0));
     ubo.light *= glm::rotate(y_light_rotation, glm::vec3(0.0, 1.0, 0.0));
@@ -3652,11 +3649,19 @@ bool VulkanObject::checkDeviceExtensionSupport(VkPhysicalDevice device) {
     // set of our required extensions
     std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
 
+    bool debug_markers_present = false;
+
     // if our device supports them
     for (const auto& extension : availableExtensions) {
         // remove from set
         requiredExtensions.erase(extension.extensionName);
+        if (!strcmp(extension.extensionName, VK_EXT_DEBUG_MARKER_EXTENSION_NAME))
+        {
+            debug_markers_present = true;
+        }
     }
+
+    //assert(debug_markers_present);
 
     // return true iff all supported
     return requiredExtensions.empty();

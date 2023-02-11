@@ -82,10 +82,7 @@ layout(binding = 6) buffer DrawnLastFrameBuffer
 struct SphereProjectionDebugData
 {
     vec4 projectedAABB;
-    //vec4 depthData;
-    //vec2 depthData;
-    //vec2 depthLookUpCoord;
-    //uint lodLevel;
+    vec4 depthData;
 };
 
 layout(std430, binding = 7) buffer SphereProjectionDebugBuffer
@@ -145,34 +142,13 @@ bool getAxisAlignedBoundingBox(
     return true;
 }
 
-//float LinearizeDepth(float depth, float near_p, float far_p)
-//{
-//    float z = depth * 2.0 - 1.0; // Back to NDC 
-//    return (2.0 * near_p * far_p) / (far_p + near_p - z * (far_p - near_p));
-//}
-
-float LinearizeDepth(float z, float n, float f) {
-    //return ((f * n)/(z + (f / (n - f)))) * (1/(f - n));
-    // equivelant to
+float linearizeDepth(float z, float n, float f)
+{
     return (f * n)/(f * z - f - n * z);
 }
 
-void early()
+uvec2 meshLODCalculation(vec4 mvPos)
 {
-    if (!drawnLastFrameBuffer.data[gl_GlobalInvocationID.x])
-    {
-        indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].vertexOffset = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
-		return;
-    }
-
-    vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
-    vec4 mvPos = ubo.view * modelPos;
-    mvPos = vec4(mvPos.xyz / mvPos.w, 1.0);
-
     float dist = length(mvPos);
 
     uint lod_index = lodConfigData.data.length();
@@ -190,33 +166,39 @@ void early()
 
     lod_index = min(lod_index, lodConfigData.data.length() - 1);
 
-    uint indexCount = lodConfigData.data[lod_index].size;
-    uint firstIndex = lodConfigData.data[lod_index].offset;
-    uint instanceCount = 1;
+    return uvec2(lodConfigData.data[lod_index].size, lodConfigData.data[lod_index].offset);
+}
 
-    indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = indexCount;
-    indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = instanceCount;
-    indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = firstIndex;
+void early(vec4 mvPos)
+{
+    if (!drawnLastFrameBuffer.data[gl_GlobalInvocationID.x])
+    {
+        indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = 0;
+        indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = 0;
+        indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = 0;
+        indirectBuffer.data[gl_GlobalInvocationID.x].vertexOffset = 0;
+        indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
+		return;
+    }
+
+    uvec2 meshResults = meshLODCalculation(mvPos);
+
+    indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = meshResults[0];
+    indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = 1;
+    indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = meshResults[1];
     indirectBuffer.data[gl_GlobalInvocationID.x].vertexOffset = 0;
     indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
 }
 
-void late()
+void late(vec4 mvPos)
 {
 	// Hard-coded chicken pos
-    vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
-    vec4 mvPos = ubo.view * modelPos;
-    mvPos = vec4(mvPos.xyz / mvPos.w, 1.0);
-
     float radius = 0.351285 * modelScalesBuffer.data[gl_GlobalInvocationID.x];
 
     bool visible = true;
 
-    float xyRatio = ubo.win_dim.x / ubo.win_dim.y;
-
     vec4 aabb;
-    bool projectionSuccess = getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.proj, aabb);
-    if (projectionSuccess)
+    if (getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.proj, aabb))
     {
         sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
 
@@ -245,10 +227,10 @@ void late()
             float height = (aabb[1] - aabb[3]) * real_height;
             float level = floor(log2(max(width, height)));
             float originalDepth = textureLod(inDepthPyramid, lodLookupCoord / scaling_factor, level).x;
-            float linearlizedDepth = LinearizeDepth(originalDepth, -0.001, -250.0);
+            float linearlizedDepth = linearizeDepth(originalDepth, -1.0, -250.0);
             float depthSphere = -1 * (mvPos.z - radius - ubo.zNear);
 
-            visible = visible && depthSphere < linearlizedDepth;
+            visible = visible && depthSphere <= linearlizedDepth;
         }
 
         sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
@@ -268,30 +250,11 @@ void late()
     }
     else
     {
-        float dist = length(mvPos);
+        uvec2 meshResults = meshLODCalculation(mvPos);
 
-        uint lod_index = lodConfigData.data.length();
-
-        for(uint curr_lod_index = 0; curr_lod_index < lodConfigData.data.length() - 1; ++curr_lod_index)
-        {
-            float curr_lod_max_dist = lodConfigData.data[curr_lod_index].maxDist;
-            float next_lod_max_dist = lodConfigData.data[curr_lod_index + 1].maxDist;
-            if(dist > curr_lod_max_dist && dist <= next_lod_max_dist)
-            {
-                lod_index = curr_lod_index + 1;
-                break;
-            }
-        }
-
-        lod_index = min(lod_index, lodConfigData.data.length() - 1);
-
-        uint indexCount = mix(0, lodConfigData.data[lod_index].size, visible);
-        uint firstIndex = mix(0, lodConfigData.data[lod_index].offset, visible);
-        uint instanceCount = mix(0, 1, visible);
-
-        indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = indexCount;
-        indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = instanceCount;
-        indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = firstIndex;
+        indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = mix(0, meshResults[0], visible);
+        indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = mix(0, 1, visible);
+        indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = mix(0, meshResults[1], visible);
         indirectBuffer.data[gl_GlobalInvocationID.x].vertexOffset = 0;
         indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
     }
@@ -313,32 +276,17 @@ void main()
         return;
     }
 
+    vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
+    vec4 mvPos = ubo.view * modelPos;
+    mvPos = vec4(mvPos.xyz / mvPos.w, 1.0);
+
     if (ubo.display_mode == 25)
     {
-        vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
-        vec4 mvPos = ubo.view * modelPos;
-        mvPos = vec4(mvPos.xyz / mvPos.w, 1.0);
+        uvec2 meshResults = meshLODCalculation(mvPos);
 
-        float dist = length(mvPos);
-
-        uint lod_index = lodConfigData.data.length();
-
-        for(uint curr_lod_index = 0; curr_lod_index < lodConfigData.data.length() - 1; ++curr_lod_index)
-        {
-            float curr_lod_max_dist = lodConfigData.data[curr_lod_index].maxDist;
-            float next_lod_max_dist = lodConfigData.data[curr_lod_index + 1].maxDist;
-            if(dist > curr_lod_max_dist && dist <= next_lod_max_dist)
-            {
-                lod_index = curr_lod_index + 1;
-                break;
-            }
-        }
-
-        lod_index = min(lod_index, lodConfigData.data.length() - 1);
-
-        indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = lodConfigData.data[lod_index].size;
+        indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = meshResults[0];
         indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = 1;
-        indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = lodConfigData.data[lod_index].offset;
+        indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = meshResults[1];
         indirectBuffer.data[gl_GlobalInvocationID.x].vertexOffset = 0;
         indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
     }
@@ -346,13 +294,11 @@ void main()
     {
         if (EARLY)
         {
-            early();
-            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(123.0, 456.0, 789.0, 123.0);
+            early(mvPos);
         }
         else
         {
-            late();
-            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(111.0, 222.0, 333.0, 444.0);
+            late(mvPos);
         }
     }
 }
