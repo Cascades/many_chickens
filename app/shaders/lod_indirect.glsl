@@ -218,7 +218,6 @@ void late()
     bool projectionSuccess = getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.proj, aabb);
     if (projectionSuccess)
     {
-        vec4 OG_aabb = ((aabb + 1.0) * 0.5);
         sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
 
         vec2 frame_size = ubo.win_dim;
@@ -229,51 +228,34 @@ void late()
 	    vec2 real_size = vec2(max(real_width, real_height));
 
 	    vec2 scaling_factor = real_size / frame_size;
-        aabb = ((aabb + 1.0) * 0.5) / vec4(scaling_factor, scaling_factor);
-        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
-
-        float width = (aabb[0] - aabb[2]) * real_width;
-        float height = (aabb[1] - aabb[3]) * real_height;
-
-        float level = floor(log2(max(width, height)));
+        // transform to (0, 1)
+        aabb = ((aabb + 1.0) * 0.5);
 
         vec2 lodLookupCoord = vec2(aabb.xy + aabb.zw) * 0.5;
-        //lodLookupCoord /= scaling_factor;
-        vec2 modifiedlodLookupCoord = (floor((lodLookupCoord * frame_size) / pow(2, level)) * pow(2, level)) / frame_size;
 
-        if (lodLookupCoord.x < 0.0 || lodLookupCoord.x > (1.0 / scaling_factor.x) ||
-            lodLookupCoord.y < 0.0 || lodLookupCoord.y > (1.0 / scaling_factor.y))
+        if (lodLookupCoord.x < 0.0 || lodLookupCoord.x > 1.0 ||
+            lodLookupCoord.y < 0.0 || lodLookupCoord.y > 1.0)
         {
             sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(1.0);
         }
         else
         {
             // Sampler is set up to do min reduction, so this computes the minimum depth of a 2x2 texel quad
-            float originalDepth = textureLod(inDepthPyramid, lodLookupCoord, level).x;
+            float width = (aabb[0] - aabb[2]) * real_width;
+            float height = (aabb[1] - aabb[3]) * real_height;
+            float level = floor(log2(max(width, height)));
+            float originalDepth = textureLod(inDepthPyramid, lodLookupCoord / scaling_factor, level).x;
             float linearlizedDepth = LinearizeDepth(originalDepth, -0.001, -250.0);
-            float depth = 0.001 + (250.0 - 0.001) * linearlizedDepth;
             float depthSphere = -1 * (mvPos.z - radius - ubo.zNear);
 
-            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].depthData = vec4(lodLookupCoord, vec2(depth, depthSphere));
-
             visible = visible && depthSphere < linearlizedDepth;
-            sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(lodLookupCoord, vec2(depthSphere, linearlizedDepth));
-
-            //depthSphere < linearlizedDepth
-
-            //vec2 pixel_size = vec2(pow(2, level)) / frame_size;
-            //vec2 lodOGLookupCoord = vec2(OG_aabb.xy + OG_aabb.zw) * 0.5;
-            //vec2 modifiedOGlodLookupCoordFloor = (floor((lodOGLookupCoord * real_size) / pow(2, level)) * pow(2, level)) / real_size;
-            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(lodLookupCoord,
-            //                                                                               lodLookupCoord + pixel_size);
-            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
-            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].lodLevel = uint(level);
         }
+
+        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
     }
     else
     {
         sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(1.0);
-        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].lodLevel = 9;
     }
 
     if ((!visible) || drawnLastFrameBuffer.data[gl_GlobalInvocationID.x])

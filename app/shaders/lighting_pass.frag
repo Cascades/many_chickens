@@ -200,9 +200,9 @@ void main()
 
     if(ubo.display_mode >= 20 && ubo.display_mode < 23)
 	{
-        vec2 clipSpace = vec2(inUV * 2.0 - 1.0);
+        vec2 clipSpace = inUV;
 
-        /*float currentExtraRVal = 0.0f;
+        float currentExtraRVal = 0.0f;
 
         for (uint i = 0; i < sphereProjectionDebugBuffer.data.length(); ++i)
         {
@@ -224,9 +224,9 @@ void main()
             min(1.0, tmpOutFragColor.x + currentExtraRVal),
             tmpOutFragColor.y,
             tmpOutFragColor.z,
-            tmpOutFragColor.w);*/
+            tmpOutFragColor.w);
         
-        float currentExtraRVal = 0.0f;
+        /*float currentExtraRVal = 0.0f;
 
         for (uint i = 0; i < sphereProjectionDebugBuffer.data.length(); ++i)
         {
@@ -246,6 +246,6 @@ void main()
             min(1.0, tmpOutFragColor.x + currentExtraRVal),
             tmpOutFragColor.y,
             tmpOutFragColor.z,
-            tmpOutFragColor.w);
+            tmpOutFragColor.w);*/
 	}
 }
