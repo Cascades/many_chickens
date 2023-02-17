@@ -188,7 +188,7 @@ private:
     std::vector<VkBuffer> sphereProjectionDebugSSBO;
     std::vector<VkDeviceMemory> sphereProjectionDebugSSBOMemory;
 
-    static constexpr size_t chickenCount = 10;
+    static constexpr size_t chickenCount = 115;
 
     struct ModelTransforms {
         std::array<glm::mat4, chickenCount> modelMatricies{};
