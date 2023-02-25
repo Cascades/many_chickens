@@ -41,7 +41,7 @@ layout (location = 0) out vec4 outFragcolor;
 struct SphereProjectionDebugData
 {
     vec4 projectedAABB;
-    vec4 depthData;
+    //vec4 depthData;
 };
 
 layout(std430, binding = 8) buffer SphereProjectionDebugBuffer
@@ -69,16 +69,16 @@ vec4 position_from_depth(float depth)
 
 float calc_shadow_influence(vec4 position)
 {
-    
+
     return 1.0;
 }
 
 float insideBox(vec2 v, vec2 bottomLeft, vec2 topRight) {
     vec2 s = step(bottomLeft, v) - step(topRight, v);
-    return s.x * s.y;   
+    return s.x * s.y;
 }
 
-void main() 
+void main()
 {
     vec4 tmpOutFragColor;
 
@@ -165,7 +165,7 @@ void main()
 
                 float ambient = ubo.ambient;
                 float diffuse = ubo.diffuse * max(0.0, dot(normal_dir, -light_dir)) * shadow;
-            
+
                 float specular = 0.0;
                 if(diffuse != 0.0)
                 {
@@ -197,27 +197,34 @@ void main()
         vec2 clipSpace = inUV;
 
         float currentExtraRVal = 0.0f;
+        float currentExtraBVal = 0.0f;
 
         for (uint i = 0; i < sphereProjectionDebugBuffer.data.length(); ++i)
         {
-            bool inBox = clipSpace.x < sphereProjectionDebugBuffer.data[i].projectedAABB[0] &&
-                         clipSpace.x > sphereProjectionDebugBuffer.data[i].projectedAABB[2] &&
-                         clipSpace.y < sphereProjectionDebugBuffer.data[i].projectedAABB[1] &&
-                         clipSpace.y > sphereProjectionDebugBuffer.data[i].projectedAABB[3];
-            bool tooFarInBox = clipSpace.x < sphereProjectionDebugBuffer.data[i].projectedAABB[0] - 0.002 &&
-                               clipSpace.x > sphereProjectionDebugBuffer.data[i].projectedAABB[2] + 0.002 &&
-                               clipSpace.y < sphereProjectionDebugBuffer.data[i].projectedAABB[1] - 0.002 &&
-                               clipSpace.y > sphereProjectionDebugBuffer.data[i].projectedAABB[3] + 0.002;
+          vec4 aabb_ = sphereProjectionDebugBuffer.data[i].projectedAABB;
+          vec4 aabb = abs(aabb_);
+            bool inBox = clipSpace.x < aabb[0] &&
+                         clipSpace.x > aabb[2] &&
+                         clipSpace.y < aabb[1] &&
+                         clipSpace.y > aabb[3];
+            bool tooFarInBox = clipSpace.x < aabb[0] - 0.002 &&
+                               clipSpace.x > aabb[2] + 0.002 &&
+                               clipSpace.y < aabb[1] - 0.002 &&
+                               clipSpace.y > aabb[3] + 0.002;
             if(inBox && !tooFarInBox)
             {
                 currentExtraRVal = 0.7;
+                if (aabb != aabb_) {
+                  currentExtraRVal = 0;
+                  currentExtraBVal = 0.7;
+                }
             }
         }
-        
+
         outFragcolor = vec4(
             min(1.0, tmpOutFragColor.x + currentExtraRVal),
             tmpOutFragColor.y,
-            tmpOutFragColor.z,
+            min(1.0, tmpOutFragColor.z + currentExtraBVal),
             tmpOutFragColor.w);
 	}
 }

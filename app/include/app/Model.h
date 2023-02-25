@@ -45,7 +45,7 @@ public:
     float specular = 0.1f;
     float diffuse = 0.5f;
     float ambient = 0.2f;
-	
+
 	void loadModel(std::filesystem::path const & model_path)
     {
         tinyobj::ObjReaderConfig reader_config;
@@ -242,6 +242,7 @@ private:
                     0,
                     &lod_error));
 
+            /*
             std::cout << std::format("| {:^9} | {:.7f} | {:>18} | {:.10f} | {:>15} | {:.7f} |",
                 lod_index,
                 threshold,
@@ -249,8 +250,10 @@ private:
                 target_error,
                 lod_indices[lod_index].size(),
                 lod_error) << std::endl;
+            */
         }
 
+        /*
         std::cout << std::format("| {:^9} | {:.7f} | {:>18} | {:.10f} | {:>15} | {:.7f} |",
             0,
             1.0f,
@@ -258,7 +261,7 @@ private:
             0.0f,
             index_count,
             0.0f) << std::endl;
-
+        */
         indices.clear();
 
         float cuur_max_dist = 8.0f;

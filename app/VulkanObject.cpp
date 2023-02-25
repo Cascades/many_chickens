@@ -41,10 +41,10 @@
 
 // vector of validation layers to be used.
 
-// by default VK_LAYER_KHRONOS_validation should be included, containing a 
+// by default VK_LAYER_KHRONOS_validation should be included, containing a
 // bundle of common validation layers
 
-// validation layers are used enable optional components which can assist 
+// validation layers are used enable optional components which can assist
 // with debugging. The alternative is simply crashing out of potentially trivial bugs.
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -155,7 +155,7 @@ void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> ca
     createFramebuffers();
 
     imgui_frame_buffers.resize(swapChainImages.size());
-	
+
     {
         VkImageView attachment[1];
         VkFramebufferCreateInfo info = {};
@@ -642,7 +642,7 @@ void VulkanObject::createSSBOs() {
     struct sphereProjectionDebugData
     {
         glm::vec4 aabb;
-        glm::vec4 depthData;
+      //glm::vec4 depthData;
     };
 
     bufferSize = modelTransforms->modelMatricies.size() * sizeof(sphereProjectionDebugData);
@@ -1088,7 +1088,7 @@ void VulkanObject::createInstance() {
     }
 
     // we try to create an instance of vulkan.
-    // we pass in reference to our createInfo struct, we leave the allocator as 
+    // we pass in reference to our createInfo struct, we leave the allocator as
     // default, and a reference to our instance variable to populate
 
     // if that didn't work
@@ -1130,7 +1130,7 @@ void VulkanObject::setupDebugMessenger() {
 
 // create our surface
 void VulkanObject::createSurface() {
-    // use glfw to create the window surface. This will do all of the OS specific 
+    // use glfw to create the window surface. This will do all of the OS specific
     // operations that we need to get a surface and window up and running
     if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
         // if it fails, throw error
@@ -1262,7 +1262,7 @@ void VulkanObject::createLogicalDevice() {
     }
 
     VkPhysicalDeviceProperties output_props{};
-	
+
     vkGetPhysicalDeviceProperties(physicalDevice, &output_props);
 
     std::cout << output_props.apiVersion << std::endl;
@@ -1377,7 +1377,7 @@ void VulkanObject::createImguiPass()
     ///
     ///
     /// imgui pass
-    /// 
+    ///
     ///
 
     VkAttachmentDescription imgui_attachment = {};
@@ -1435,7 +1435,7 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
     std::array<VkImageView, 4> imageViews{};
 
     std::array<VkAttachmentReference, 2> colorAttachmentRefs{};
-	
+
 	// color 1
     if (firstRun)
     {
@@ -1549,7 +1549,7 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
         imageViews[imageViews.size() - 1] = createImageView(offScreenPass.depth.image, findDepthFormat(), VK_IMAGE_ASPECT_DEPTH_BIT);
         offScreenPass.depth.view = imageViews[imageViews.size() - 1];
     }
-	
+
     attachmentDescriptions[attachmentDescriptions.size() - 1].format = findDepthFormat();
     attachmentDescriptions[attachmentDescriptions.size() - 1].samples = VK_SAMPLE_COUNT_1_BIT;
     attachmentDescriptions[attachmentDescriptions.size() - 1].loadOp = clearAttachmentsOnLoad ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -1562,7 +1562,7 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
     VkAttachmentReference depthAttachmentRef{};
     depthAttachmentRef.attachment = static_cast<uint32_t>(attachmentDescriptions.size() - 1);
     depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-	
+
     std::array<VkSubpassDescription, 2> subpassDescriptions{};
     subpassDescriptions[0].flags = 0;
     subpassDescriptions[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -1586,7 +1586,7 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
     VkAttachmentReference outputAttachmentRef{};
     outputAttachmentRef.attachment = 2;
     outputAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	
+
     subpassDescriptions[1].flags = 0;
     subpassDescriptions[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpassDescriptions[1].inputAttachmentCount = static_cast<uint32_t>(deferredIntputAttachmentRefs.size());
@@ -1632,7 +1632,7 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
     renderPassInfo.pSubpasses = subpassDescriptions.data();
     renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
     renderPassInfo.pDependencies = dependencies.data();
-    
+
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &geometryPass) != VK_SUCCESS) {
         throw std::runtime_error("failed to create render pass!");
     }
@@ -1652,7 +1652,7 @@ void VulkanObject::createLateGeometryPass()
 void VulkanObject::createShadowPass()
 {
     std::array<VkAttachmentDescription, 1> attachmentDescriptions{};
-	
+
     createImage(swapChainExtent.width,
         swapChainExtent.height,
         findDepthFormat(),
@@ -1663,7 +1663,7 @@ void VulkanObject::createShadowPass()
         shadowPass.depth.mem);
 
     shadowPass.depth.view = createImageView(shadowPass.depth.image, findDepthFormat(), VK_IMAGE_ASPECT_DEPTH_BIT);
-	
+
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
@@ -1720,11 +1720,11 @@ void VulkanObject::createShadowPass()
     attachmentDescriptions[attachmentDescriptions.size() - 1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachmentDescriptions[attachmentDescriptions.size() - 1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     attachmentDescriptions[attachmentDescriptions.size() - 1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-	
+
     VkAttachmentReference depthAttachmentRef{};
     depthAttachmentRef.attachment = static_cast<uint32_t>(attachmentDescriptions.size() - 1);
     depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-	
+
     std::array<VkSubpassDescription, 1> subpassDescriptions{};
     subpassDescriptions[0].flags = 0;
     subpassDescriptions[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -1736,7 +1736,7 @@ void VulkanObject::createShadowPass()
     subpassDescriptions[0].pDepthStencilAttachment = &depthAttachmentRef;
     subpassDescriptions[0].preserveAttachmentCount = 0;
     subpassDescriptions[0].pResolveAttachments = nullptr;
-	
+
     std::array<VkSubpassDependency, 2> dependencies;
 
     dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -1754,7 +1754,7 @@ void VulkanObject::createShadowPass()
     dependencies[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-	
+
     VkRenderPassCreateInfo shadowPassInfo{};
     shadowPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     shadowPassInfo.pNext = nullptr;
@@ -1765,7 +1765,7 @@ void VulkanObject::createShadowPass()
     shadowPassInfo.pSubpasses = subpassDescriptions.data();
     shadowPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
     shadowPassInfo.pDependencies = dependencies.data();
-	
+
     if (vkCreateRenderPass(device, &shadowPassInfo, nullptr, &shadowPass.renderPass) != VK_SUCCESS) {
         throw std::runtime_error("failed to create render pass!");
     }
@@ -1979,7 +1979,7 @@ void VulkanObject::createDescriptorSets() {
         mc::DescriptorInfo<VkDescriptorImageInfo> depthDescriptorInfo{
             offScreenPass.depth.view,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        
+
         for (size_t depthPyramidDepth = 0; depthPyramidDepth < depthPyramidViews.size(); ++depthPyramidDepth)
         {
             depthPyramidDescriptorInfo.emplace_back(
@@ -2254,7 +2254,7 @@ void VulkanObject::createGraphicsPipeline() {
     // add standard name
     fragShaderStageInfo.pName = "main";
 
-    // an array which contains both shaders for convenience 
+    // an array which contains both shaders for convenience
     VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
     // a struct to store information about vertex data we will be passing to the vertex shader
@@ -2571,7 +2571,7 @@ void VulkanObject::createFramebuffers() {
         // number of layers
         framebufferInfo.layers = 1;
 
-        // create the pipeline!! 
+        // create the pipeline!!
         // if it fails
         if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
             // throw error
@@ -2600,7 +2600,7 @@ void VulkanObject::createFramebuffers() {
     // number of layers
     framebufferInfo.layers = 1;
 
-    // create the pipeline!! 
+    // create the pipeline!!
     // if it fails
     if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &shadowPass.frameBuffer) != VK_SUCCESS) {
         // throw error
@@ -2667,30 +2667,22 @@ void VulkanObject::createCommandBuffers() {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
 
-        std::array<VkImageMemoryBarrier, 1> initialPyramidBarriersTransition{};
-        initialPyramidBarriersTransition[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        initialPyramidBarriersTransition[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        initialPyramidBarriersTransition[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        initialPyramidBarriersTransition[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        initialPyramidBarriersTransition[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        initialPyramidBarriersTransition[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        initialPyramidBarriersTransition[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        initialPyramidBarriersTransition[0].image = depthPyramidImage;
-        initialPyramidBarriersTransition[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        initialPyramidBarriersTransition[0].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-        initialPyramidBarriersTransition[0].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+        std::array<VkMemoryBarrier, 1> initialDrawnLastFrameBuffer{};
+        initialDrawnLastFrameBuffer[0].sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        initialDrawnLastFrameBuffer[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        initialDrawnLastFrameBuffer[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 
         vkCmdPipelineBarrier(
             commandBuffers[i],
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
-            VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             VK_DEPENDENCY_BY_REGION_BIT,
+            initialDrawnLastFrameBuffer.size(),
+            initialDrawnLastFrameBuffer.data(),
             0,
             0,
             0,
-            0,
-            initialPyramidBarriersTransition.size(),
-            initialPyramidBarriersTransition.data());
+            0);
 
         // Bind the compute pipeline.
         vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
@@ -2720,7 +2712,7 @@ void VulkanObject::createCommandBuffers() {
             VK_NULL_HANDLE,
             0,
             VK_NULL_HANDLE);
-        
+
         // struct to specify render pass info
         VkRenderPassBeginInfo shadowRenderPassInfo{};
         // assign type
@@ -2746,10 +2738,10 @@ void VulkanObject::createCommandBuffers() {
         vkCmdBeginRenderPass(commandBuffers[i], &shadowRenderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
-        
+
         VkBuffer vertexBuffers[] = { vertexBuffer };
         VkDeviceSize offsets[] = { 0 };
-        
+
         vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
@@ -3074,6 +3066,18 @@ void VulkanObject::createCommandBuffers() {
         // finish the render pass
         vkCmdEndRenderPass(commandBuffers[i]);
 
+        vkCmdPipelineBarrier(
+            commandBuffers[i],
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_DEPENDENCY_BY_REGION_BIT,
+            initialDrawnLastFrameBuffer.size(),
+            initialDrawnLastFrameBuffer.data(),
+            0,
+            0,
+            0,
+            0);
+
         // finish recording commands
         // if fails
         if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
@@ -3148,7 +3152,7 @@ void VulkanObject::drawFrame() {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    
+
     ImGui::Begin("George Tattersall | Many Chickens");
 
     ImGuiColorEditFlags flags = ImGuiColorEditFlags_DisplayRGB;
@@ -3237,7 +3241,7 @@ void VulkanObject::drawFrame() {
     ImGui::RadioButton("composed", &display_mode, 24);
     ImGui::RadioButton("composed no OC", &display_mode, 25); ImGui::SameLine();
     ImGui::Checkbox("PCF", &pcf);
-   
+
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::End();
 
@@ -3406,7 +3410,7 @@ void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
     vkUnmapMemory(device, uniformBuffersMemory[currentImage]);
 
     ShadowUniformBufferObject subo{};
-	
+
     subo.depthMVP = ubo.lightVP * ubo.model;
 
     vkMapMemory(device, shadowUniformBuffersMemory[currentImage], 0, sizeof(subo), 0, &data);

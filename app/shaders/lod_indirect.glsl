@@ -82,7 +82,7 @@ layout(binding = 6) buffer DrawnLastFrameBuffer
 struct SphereProjectionDebugData
 {
     vec4 projectedAABB;
-    vec4 depthData;
+    //vec4 depthData;
 };
 
 layout(std430, binding = 7) buffer SphereProjectionDebugBuffer
@@ -139,6 +139,14 @@ bool getAxisAlignedBoundingBox(
         project(P, right).x,
         project(P, bottom).y
         );
+
+    if ((abs(AABB.x) > 1) ||
+        (abs(AABB.y) > 1) ||
+        (abs(AABB.z) > 1) ||
+        (abs(AABB.w) > 1)) {
+      return false;
+    }
+
     return true;
 }
 
@@ -200,7 +208,7 @@ void late(vec4 mvPos)
     vec4 aabb;
     if (getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.proj, aabb))
     {
-        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
+        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
 
         vec2 frame_size = ubo.win_dim;
 
@@ -227,17 +235,22 @@ void late(vec4 mvPos)
             float height = (aabb[1] - aabb[3]) * real_height;
             float level = floor(log2(max(width, height)));
             float originalDepth = textureLod(inDepthPyramid, lodLookupCoord / scaling_factor, level).x;
-            float linearlizedDepth = linearizeDepth(originalDepth, -1.0, -250.0);
-            float depthSphere = -1 * (mvPos.z - radius - ubo.zNear);
+            if (originalDepth != 1234.0)
+            {
+                float linearlizedDepth = linearizeDepth(originalDepth, -1.0, -250.0);
+                float depthSphere = -1 * (mvPos.z - radius - ubo.zNear) - 3.0;
 
-            visible = visible && depthSphere <= linearlizedDepth;
+                visible = visible && depthSphere <= linearlizedDepth;
+                sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(depthSphere, linearlizedDepth, 0.0, 0.0);//aabb;
+            }
         }
 
-        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
+        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(depthSphere, linearlizedDepth, 0.0, 0.0);//aabb;
     }
     else
     {
-        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(1.0);
+        aabb = ((aabb + 1.0) * 0.5);
+        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = -aabb;//vec4(1.0);
     }
 
     if ((!visible) || drawnLastFrameBuffer.data[gl_GlobalInvocationID.x])

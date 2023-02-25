@@ -82,7 +82,7 @@ private:
 
     // our swap chain object
     VkSwapchainKHR swapChain;
-    // vector of our swap chain images 
+    // vector of our swap chain images
     std::vector<VkImage> swapChainImages;
     // the format of our swap chain
     VkFormat swapChainImageFormat;
@@ -118,7 +118,7 @@ private:
         VkSampler pcfsampler;
         VkRenderPass renderPass;
     } shadowPass;
-	
+
     // vector of image views (to access our images)
     std::vector<VkImageView> swapChainImageViews;
     // vector of all frame buffers
@@ -127,7 +127,7 @@ private:
     std::vector<VkFramebuffer> imgui_frame_buffers;
 
     VkFramebuffer geometryFrameBuffer;
-	
+
     // render pass object
     VkRenderPass renderPass;
     VkRenderPass earlyGeometryPass;
@@ -188,7 +188,7 @@ private:
     std::vector<VkBuffer> sphereProjectionDebugSSBO;
     std::vector<VkDeviceMemory> sphereProjectionDebugSSBOMemory;
 
-    static constexpr size_t chickenCount = 115;
+  static constexpr size_t chickenCount = 10000;//10;
 
     struct ModelTransforms {
         std::array<glm::mat4, chickenCount> modelMatricies{};
@@ -259,7 +259,7 @@ private:
     void createEarlyGeometryPass();
     void createLateGeometryPass();
     void createShadowPass();
-	
+
     VkFormat findDepthFormat();
 
     bool hasStencilComponent(VkFormat format);
