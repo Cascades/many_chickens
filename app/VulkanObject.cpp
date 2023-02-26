@@ -362,6 +362,22 @@ void VulkanObject::createTextureSampler() {
     {
         throw std::runtime_error("failed to create depth sampler!");
     }
+
+    VkSamplerCreateInfo meshesDrawnDebugViewInfo = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+
+    meshesDrawnDebugViewInfo.magFilter = VK_FILTER_LINEAR;
+    meshesDrawnDebugViewInfo.minFilter = VK_FILTER_LINEAR;
+    meshesDrawnDebugViewInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    meshesDrawnDebugViewInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    meshesDrawnDebugViewInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    meshesDrawnDebugViewInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    meshesDrawnDebugViewInfo.minLod = 0;
+    meshesDrawnDebugViewInfo.maxLod = 0;
+
+    if (vkCreateSampler(device, &meshesDrawnDebugViewInfo, 0, &meshesDrawnDebugViewSampler) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create depth sampler!");
+    }
 }
 
 VkImageView VulkanObject::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t baseMipLevel, uint32_t levelCount) {
@@ -1548,6 +1564,19 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
 
         imageViews[imageViews.size() - 1] = createImageView(offScreenPass.depth.image, findDepthFormat(), VK_IMAGE_ASPECT_DEPTH_BIT);
         offScreenPass.depth.view = imageViews[imageViews.size() - 1];
+
+        createImage(100,
+            100,
+            VK_FORMAT_R32_SFLOAT,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            meshesDrawnDebugViewImage,
+            meshesDrawnDebugViewImageMemory);
+
+        meshesDrawnDebugViewImageView = createImageView(meshesDrawnDebugViewImage, VK_FORMAT_R32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT);
+
+
     }
 
     attachmentDescriptions[attachmentDescriptions.size() - 1].format = findDepthFormat();
@@ -1988,6 +2017,11 @@ void VulkanObject::createDescriptorSets() {
                 VK_IMAGE_LAYOUT_GENERAL);
         }
 
+        mc::DescriptorInfo<VkDescriptorImageInfo> meshesDrawnDebugViewDescriptorInfo{
+            meshesDrawnDebugViewSampler,
+            meshesDrawnDebugViewImageView,
+            VK_IMAGE_LAYOUT_GENERAL};
+
         mc::DescriptorInfo<VkDescriptorImageInfo> depthMultiMipDescriptorInfo{
             depthNearestSampler,
             depthPyramidMultiMipView,
@@ -1998,7 +2032,7 @@ void VulkanObject::createDescriptorSets() {
             depthPyramidMultiMipView,
             VK_IMAGE_LAYOUT_GENERAL };
 
-        std::array<VkWriteDescriptorSet, 8> computeDescriptorWrites{};
+        std::array<VkWriteDescriptorSet, 9> computeDescriptorWrites{};
 
         computeDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         computeDescriptorWrites[0].dstSet = computeDescriptorSets[i];
@@ -2063,6 +2097,14 @@ void VulkanObject::createDescriptorSets() {
         computeDescriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         computeDescriptorWrites[7].descriptorCount = 1;
         computeDescriptorWrites[7].pBufferInfo = sphereProjectionDebugSsboInfo.getPtr();
+
+        computeDescriptorWrites[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        computeDescriptorWrites[8].dstSet = computeDescriptorSets[i];
+        computeDescriptorWrites[8].dstBinding = 8;
+        computeDescriptorWrites[8].dstArrayElement = 0;
+        computeDescriptorWrites[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        computeDescriptorWrites[8].descriptorCount = 1;
+        computeDescriptorWrites[8].pImageInfo = meshesDrawnDebugViewDescriptorInfo.getPtr();
 
         vkUpdateDescriptorSets(
             device,
@@ -2652,6 +2694,10 @@ void VulkanObject::createCommandBuffers() {
     }
 
     transitionImageLayout(depthPyramidImage, VK_FORMAT_R32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    transitionImageLayout(meshesDrawnDebugViewImage, VK_FORMAT_R32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    meshesDrawnDebugViewImageViewImGUITexID = ImGui_ImplVulkan_AddTexture(meshesDrawnDebugViewSampler,
+        meshesDrawnDebugViewImageView,
+        VK_IMAGE_LAYOUT_GENERAL);
 
     // for each command buffer generated
     for (size_t i = 0; i < commandBuffers.size(); i++) {
@@ -2999,6 +3045,75 @@ void VulkanObject::createCommandBuffers() {
             finalPyramidBarriers.size(),
             finalPyramidBarriers.data());
 
+        /*std::array<VkImageMemoryBarrier, 1> meshesDrawnDebugViewPreClearBarriers{};
+        finalPyramidBarriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        finalPyramidBarriers[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        finalPyramidBarriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        finalPyramidBarriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        finalPyramidBarriers[0].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        finalPyramidBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        finalPyramidBarriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        finalPyramidBarriers[0].image = meshesDrawnDebugViewImage;
+        finalPyramidBarriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        finalPyramidBarriers[0].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+        finalPyramidBarriers[0].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+        // Barrier between compute and vertex shading.
+        vkCmdPipelineBarrier(
+            commandBuffers[i],
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_DEPENDENCY_BY_REGION_BIT,
+            0,
+            0,
+            0,
+            0,
+            meshesDrawnDebugViewClearBarriers.size(),
+            meshesDrawnDebugViewClearBarriers.data());*/
+
+        VkImageSubresourceRange imageSubresourceRange{};
+        imageSubresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageSubresourceRange.baseMipLevel = 0;
+        imageSubresourceRange.levelCount = 1;
+        imageSubresourceRange.baseArrayLayer = 0;
+        imageSubresourceRange.layerCount = 1;
+
+        const VkClearColorValue clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
+
+        vkCmdClearColorImage(
+            commandBuffers[i],
+            meshesDrawnDebugViewImage,
+            VK_IMAGE_LAYOUT_GENERAL,
+            &clearValue,
+            1,
+            &imageSubresourceRange);
+
+        std::array<VkImageMemoryBarrier, 1> meshesDrawnDebugViewPostClearBarriers{};
+        meshesDrawnDebugViewPostClearBarriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        meshesDrawnDebugViewPostClearBarriers[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        meshesDrawnDebugViewPostClearBarriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        meshesDrawnDebugViewPostClearBarriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        meshesDrawnDebugViewPostClearBarriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        meshesDrawnDebugViewPostClearBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        meshesDrawnDebugViewPostClearBarriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        meshesDrawnDebugViewPostClearBarriers[0].image = meshesDrawnDebugViewImage;
+        meshesDrawnDebugViewPostClearBarriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        meshesDrawnDebugViewPostClearBarriers[0].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+        meshesDrawnDebugViewPostClearBarriers[0].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+        // Barrier between compute and vertex shading.
+        vkCmdPipelineBarrier(
+            commandBuffers[i],
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_DEPENDENCY_BY_REGION_BIT,
+            0,
+            0,
+            0,
+            0,
+            meshesDrawnDebugViewPostClearBarriers.size(),
+            meshesDrawnDebugViewPostClearBarriers.data());
+
         // Bind the compute pipeline.
         vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
         // Bind descriptor set.
@@ -3242,6 +3357,8 @@ void VulkanObject::drawFrame() {
     ImGui::RadioButton("composed no OC", &display_mode, 25); ImGui::SameLine();
     ImGui::Checkbox("PCF", &pcf);
 
+    ImGui::Image((void*)meshesDrawnDebugViewImageViewImGUITexID, ImVec2(100, 100));
+
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::End();
 
@@ -3397,6 +3514,7 @@ void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
     ubo.pcf_on = pcf;
 
     ubo.win_dim = glm::vec2(swapChainExtent.width, swapChainExtent.height);
+    ubo.top_down_model_bounds = glm::vec4(glm::vec2(-5.0f, -5.0f), glm::vec2(5.0f, 5.0f));
 
     glm::mat4 light_view = glm::lookAt(glm::vec3(ubo.light * glm::vec4(-2.5f, 0.0f, 0.0f, 1.0f)), glm::vec3(0.0), glm::vec3(0.0, 1.0, 0.0));
     glm::mat4 light_proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.001f, 4.0f);

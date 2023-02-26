@@ -38,6 +38,7 @@ layout(std140, binding = 2) uniform UniformBufferObject {
 	vec4 Kd;
 	vec4 Ks;
 	vec4 Ke;
+    vec4 top_down_model_bounds;
     vec2 win_dim;
     float Ns;
 	float model_stage_on;
@@ -89,6 +90,8 @@ layout(std430, binding = 7) buffer SphereProjectionDebugBuffer
 {
 	SphereProjectionDebugData data[];
 } sphereProjectionDebugBuffer;
+
+layout(binding = 8, r32f) uniform writeonly image2D meshesDrawnDebugView;
 
 vec3 project(mat4 P, vec3 Q)
 {
@@ -241,16 +244,15 @@ void late(vec4 mvPos)
                 float depthSphere = -1 * (mvPos.z - radius - ubo.zNear) - 3.0;
 
                 visible = visible && depthSphere <= linearlizedDepth;
-                sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(depthSphere, linearlizedDepth, 0.0, 0.0);//aabb;
             }
         }
 
-        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(depthSphere, linearlizedDepth, 0.0, 0.0);//aabb;
+        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
     }
     else
     {
         aabb = ((aabb + 1.0) * 0.5);
-        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = -aabb;//vec4(1.0);
+        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = -aabb;
     }
 
     if ((!visible) || drawnLastFrameBuffer.data[gl_GlobalInvocationID.x])
@@ -272,9 +274,18 @@ void late(vec4 mvPos)
         indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
     }
 
+    vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
+    vec2 modelXZ = modelPos.xz;
+    modelXZ -= vec2(17.0, 0.0);
+    modelXZ += vec2(5.0, 5.0);
+    modelXZ /= vec2(10.0, 10.0);
+    modelXZ *= vec2(100.0, 100.0);
+    ivec2 debugMeshPos = ivec2(int(modelXZ[0]), int(modelXZ[1]));
+    sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(modelXZ, modelXZ);
     if (visible)
     {
         drawnLastFrameBuffer.data[gl_GlobalInvocationID.x] = true;
+        imageStore(meshesDrawnDebugView, debugMeshPos, vec4(1.0, 0.0, 0.0, 1.0));
     }
     else
     {

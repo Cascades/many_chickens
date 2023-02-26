@@ -15,6 +15,7 @@ struct UniformBufferObject {
 	glm::vec4 Kd;
 	glm::vec4 Ks;
 	glm::vec4 Ke;
+	glm::vec4 top_down_model_bounds;
 	glm::vec2 win_dim;
 	glm::float32 Ns;
 	glm::float32 model_stage_on;
