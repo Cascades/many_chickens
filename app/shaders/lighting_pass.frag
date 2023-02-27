@@ -11,6 +11,7 @@ layout(std140, binding = 0) uniform UniformBufferObject {
 	vec4 Kd;
 	vec4 Ks;
 	vec4 Ke;
+    vec4 top_down_model_bounds;
     vec2 win_dim;
     float Ns;
 	float model_stage_on;

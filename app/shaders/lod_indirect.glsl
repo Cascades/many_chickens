@@ -180,9 +180,16 @@ uvec2 meshLODCalculation(vec4 mvPos)
     return uvec2(lodConfigData.data[lod_index].size, lodConfigData.data[lod_index].offset);
 }
 
+bool potentiallyInFrustum(vec3 mvPos, float radius, float near, float far)
+{
+    return (-mvPos.z + radius > near) && (-mvPos.z - radius < far);
+}
+
 void early(vec4 mvPos)
 {
-    if (!drawnLastFrameBuffer.data[gl_GlobalInvocationID.x])
+    float radius = 0.351285 * modelScalesBuffer.data[gl_GlobalInvocationID.x];
+
+    if (!drawnLastFrameBuffer.data[gl_GlobalInvocationID.x] || !potentiallyInFrustum(mvPos.xyz, radius, 1.0, 250.0))
     {
         indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = 0;
         indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = 0;
@@ -208,11 +215,11 @@ void late(vec4 mvPos)
 
     bool visible = true;
 
-    vec4 aabb;
-    if (getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.proj, aabb))
-    {
-        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
+    visible = visible && potentiallyInFrustum(mvPos.xyz, radius, 1.0, 250.0);
 
+    vec4 aabb;
+    if (visible && getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.proj, aabb))
+    {
         vec2 frame_size = ubo.win_dim;
 
         float real_width = pow(2, ceil(log2(frame_size.x)));
@@ -277,11 +284,10 @@ void late(vec4 mvPos)
     vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
     vec2 modelXZ = modelPos.xz;
     modelXZ -= vec2(17.0, 0.0);
-    modelXZ += vec2(5.0, 5.0);
-    modelXZ /= vec2(10.0, 10.0);
+    modelXZ += vec2(5.0 + 1.0, 5.0 + 1.0);
+    modelXZ /= vec2(10.0 + 2.0, 10.0 + 2.0);
     modelXZ *= vec2(100.0, 100.0);
     ivec2 debugMeshPos = ivec2(int(modelXZ[0]), int(modelXZ[1]));
-    sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(modelXZ, modelXZ);
     if (visible)
     {
         drawnLastFrameBuffer.data[gl_GlobalInvocationID.x] = true;
