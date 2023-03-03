@@ -1567,14 +1567,14 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
 
         createImage(100,
             100,
-            VK_FORMAT_R32_SFLOAT,
+            VK_FORMAT_R32G32B32A32_SFLOAT,
             VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             meshesDrawnDebugViewImage,
             meshesDrawnDebugViewImageMemory);
 
-        meshesDrawnDebugViewImageView = createImageView(meshesDrawnDebugViewImage, VK_FORMAT_R32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT);
+        meshesDrawnDebugViewImageView = createImageView(meshesDrawnDebugViewImage, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT);
 
 
     }
@@ -3357,7 +3357,7 @@ void VulkanObject::drawFrame() {
     ImGui::RadioButton("composed no OC", &display_mode, 25); ImGui::SameLine();
     ImGui::Checkbox("PCF", &pcf);
 
-    ImGui::Image((void*)meshesDrawnDebugViewImageViewImGUITexID, ImVec2(100, 100));
+    ImGui::Image((void*)meshesDrawnDebugViewImageViewImGUITexID, ImVec2(500, 500));
 
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::End();
@@ -3540,7 +3540,20 @@ void VulkanObject::updateSSBO() {
     modelTransforms = std::make_unique<ModelTransforms>();
     modelScales = std::make_unique<decltype(modelScales)::element_type>();
 
-    std::random_device dev;
+    auto duck_0_trans = glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, -5.0f));
+    auto duck_1_trans = glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, 5.0f));
+    modelScales->operator[](0) = 0.1;
+    auto duck_0_scale = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](0)));
+    modelScales->operator[](1) = 5.0;
+    auto duck_1_scale = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](1)));
+    auto duck_0_rot = glm::mat4(1.0);
+    auto duck_1_rot = glm::mat4(1.0);
+
+    modelTransforms->modelMatricies[0] = duck_0_trans * duck_0_rot * duck_0_scale;
+    modelTransforms->modelMatricies[1] = duck_1_trans * duck_1_rot * duck_1_scale;
+    
+
+    /*std::random_device dev;
     std::mt19937 rng(dev());
     std::uniform_real_distribution<float> translation_dist(-5.0f, 5.0f);
     std::uniform_real_distribution<float> scale_dist(0.1f, 5.0f);
@@ -3559,7 +3572,7 @@ void VulkanObject::updateSSBO() {
         rotation_matrix *= glm::rotate(rotation_dist(rng), glm::vec3(0.0f, 0.0f, 1.0f));
 
         modelTransforms->modelMatricies[matrixIndex] = translation_matrix * rotation_matrix * scale_matrix;
-    }
+    }*/
 
     void* data;
     vkMapMemory(device, SSBOMemory, 0, sizeof(ModelTransforms), 0, &data);

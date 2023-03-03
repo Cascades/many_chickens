@@ -91,7 +91,7 @@ layout(std430, binding = 7) buffer SphereProjectionDebugBuffer
 	SphereProjectionDebugData data[];
 } sphereProjectionDebugBuffer;
 
-layout(binding = 8, r32f) uniform writeonly image2D meshesDrawnDebugView;
+layout(binding = 8, rgba32f) uniform writeonly image2D meshesDrawnDebugView;
 
 vec3 project(mat4 P, vec3 Q)
 {
@@ -250,7 +250,7 @@ void late(vec4 mvPos)
                 float linearlizedDepth = linearizeDepth(originalDepth, -1.0, -250.0);
                 float depthSphere = -1 * (mvPos.z - radius - ubo.zNear) - 3.0;
 
-                visible = visible && depthSphere <= linearlizedDepth;
+                visible = visible && depthSphere - 0.0 <= linearlizedDepth;
             }
         }
 
@@ -288,10 +288,13 @@ void late(vec4 mvPos)
     modelXZ /= vec2(10.0 + 2.0, 10.0 + 2.0);
     modelXZ *= vec2(100.0, 100.0);
     ivec2 debugMeshPos = ivec2(int(modelXZ[0]), int(modelXZ[1]));
+
+    vec4 abc[5] = vec4[](vec4(1.0, 0.0, 0.0, 1.0), vec4(0.0, 1.0, 0.0, 1.0), vec4(0.0, 0.0, 1.0, 1.0), vec4(1.0, 1.0, 0.0, 1.0), vec4(0.0, 1.0, 1.0, 1.0));
+
     if (visible)
     {
         drawnLastFrameBuffer.data[gl_GlobalInvocationID.x] = true;
-        imageStore(meshesDrawnDebugView, debugMeshPos, vec4(1.0, 0.0, 0.0, 1.0));
+        imageStore(meshesDrawnDebugView, debugMeshPos, abc[gl_GlobalInvocationID.x % 5]);
     }
     else
     {
