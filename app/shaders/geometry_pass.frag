@@ -67,8 +67,15 @@ void main() {
         }
     }
 
-    vec4 abc[5] = vec4[](vec4(1.0, 0.0, 0.0, 1.0), vec4(0.0, 1.0, 0.0, 1.0), vec4(0.0, 0.0, 1.0, 1.0), vec4(1.0, 1.0, 0.0, 1.0), vec4(0.0, 1.0, 1.0, 1.0));
+    if (sphereProjectionDebugBuffer.data.length() < 6)
+    {
+        vec4 abc[5] = vec4[](vec4(1.0, 0.0, 0.0, 1.0), vec4(0.0, 1.0, 0.0, 1.0), vec4(0.0, 0.0, 1.0, 1.0), vec4(1.0, 1.0, 0.0, 1.0), vec4(0.0, 1.0, 1.0, 1.0));
+        outNormal.rgb = abc[ID].rgb;
+    }
+    else
+    {
+        outNormal.rgb = normalize(inNormal) * 0.5 + vec3(0.5);
+    }
 
-    outNormal.rgb = abc[ID].rgb;//normalize(inNormal) * 0.5 + vec3(0.5);
     outColor.a = specularity;
 }

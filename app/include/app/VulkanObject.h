@@ -68,6 +68,7 @@ private:
     VkInstance instance;
     // create instance of debug messenger
     VkDebugUtilsMessengerEXT debugMessenger;
+    VkDebugReportCallbackEXT reportCallbackMessengerEXT;
     // create a "surface" to interface with any window system
     VkSurfaceKHR surface;
 
@@ -188,7 +189,7 @@ private:
     std::vector<VkBuffer> sphereProjectionDebugSSBO;
     std::vector<VkDeviceMemory> sphereProjectionDebugSSBOMemory;
 
-    static constexpr size_t chickenCount = 2;
+    static constexpr size_t chickenCount = 10000;
 
     struct ModelTransforms {
         std::array<glm::mat4, chickenCount> modelMatricies{};
@@ -305,7 +306,7 @@ private:
 
     void createVertexBuffer();
 
-    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t baseMipLevel = 0, uint32_t levelCount = VK_REMAINING_MIP_LEVELS);
 
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
@@ -426,6 +427,27 @@ private:
         {
             assert(false);
         }
+
+        // unless testing validation layer itself, return VK_FALSE (0)
+        return VK_FALSE;
+    }
+
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallbackEXT(
+        VkDebugReportFlagsEXT                       flags,
+        VkDebugReportObjectTypeEXT                  objectType,
+        uint64_t                                    object,
+        size_t                                      location,
+        int32_t                                     messageCode,
+        const char* pLayerPrefix,
+        const char* pMessage,
+        void* pUserData) {
+        // output message
+        std::cerr << "validation layer: " << pMessage << std::endl;
+
+        //if (messageCode >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+        //{
+        //    assert(false);
+        //}
 
         // unless testing validation layer itself, return VK_FALSE (0)
         return VK_FALSE;

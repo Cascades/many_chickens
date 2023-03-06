@@ -87,6 +87,25 @@ VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
     }
 }
 
+// create debug messenger within VkInstance instance
+VkResult CreateDebugReportCallbackEXT(VkInstance instance,
+    const VkDebugReportCallbackCreateInfoEXT* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkDebugReportCallbackEXT* pDebugMessenger)
+{
+    // function not automatically loaded, so we look up address
+    auto func = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugReportCallbackEXT");
+    // if we found the address
+    if (func != nullptr) {
+        // call the function
+        return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+    }
+    else {
+        // return an error to be dealt with by caller
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
+}
+
 // destroy debug messenger
 void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
 
@@ -741,7 +760,7 @@ void VulkanObject::createVertexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void VulkanObject::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
+void VulkanObject::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t baseMipLevel, uint32_t levelCount) {
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
@@ -750,8 +769,8 @@ void VulkanObject::transitionImageLayout(VkImage image, VkFormat format, VkImage
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = image;
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseMipLevel = baseMipLevel;
+    barrier.subresourceRange.levelCount = levelCount;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
     barrier.srcAccessMask = 0;
@@ -1142,6 +1161,16 @@ void VulkanObject::setupDebugMessenger() {
         // throw if fails
         throw std::runtime_error("failed to set up debug messenger!");
     }
+
+    VkDebugReportCallbackCreateInfoEXT pCreateInfo{};
+    pCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    pCreateInfo.pfnCallback = debugCallbackEXT;
+    pCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT;
+
+    //if (CreateDebugReportCallbackEXT(instance, &pCreateInfo, nullptr, &reportCallbackMessengerEXT) != VK_SUCCESS)
+    //{
+    //    throw std::runtime_error("failed to set up debug messenger!");
+    //}
 }
 
 // create our surface
@@ -2699,8 +2728,33 @@ void VulkanObject::createCommandBuffers() {
         meshesDrawnDebugViewImageView,
         VK_IMAGE_LAYOUT_GENERAL);
 
+    VkBuffer vertexBuffers[] = { vertexBuffer };
+    VkDeviceSize offsets[] = { 0 };
+
     // for each command buffer generated
     for (size_t i = 0; i < commandBuffers.size(); i++) {
+        auto beginLableRegion = [&](std::string_view labelName, std::span<float, 4> color)
+        {
+            PFN_vkCmdBeginDebugUtilsLabelEXT pfnCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT");
+
+            VkDebugUtilsLabelEXT label{};
+            label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+            label.pNext = nullptr;
+            label.pLabelName = labelName.data();
+            label.color[0] = color[0];
+            label.color[1] = color[1];
+            label.color[2] = color[2];
+            label.color[3] = color[3];
+            pfnCmdBeginDebugUtilsLabelEXT(commandBuffers[i], &label);
+        };
+
+        auto endLableRegion = [&]()
+        {
+            PFN_vkCmdEndDebugUtilsLabelEXT pfnCmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT");
+
+            pfnCmdEndDebugUtilsLabelEXT(commandBuffers[i]);
+        };
+
         // specify some info about the usage of this command buffer
         VkCommandBufferBeginInfo beginInfo{};
         // assign struct type
@@ -2730,21 +2784,26 @@ void VulkanObject::createCommandBuffers() {
             0,
             0);
 
-        // Bind the compute pipeline.
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
-        // Bind descriptor set.
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computeProgram->getLayout(), 0, 1,
-            &computeDescriptorSets[i], 0, nullptr);
-        vk::Bool32 cullStageConstant = true;
-        vkCmdPushConstants(
-            commandBuffers[i],
-            computeProgram->getLayout(),
-            computeProgram->getPushConstantStages(),
-            0,
-            sizeof(cullStageConstant),
-            &cullStageConstant);
-        // Dispatch compute job.
-        vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
+        // EARLY CULLING PASS COMPUTE SHADER BEGIN
+        {
+            std::array<float, 4> labelCol = {1.0f, 0.2f, 0.2f, 1.0f};
+            beginLableRegion("Early cull compute", labelCol);
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computeProgram->getLayout(), 0, 1,
+                &computeDescriptorSets[i], 0, nullptr);
+            vk::Bool32 cullStageConstant = true;
+            vkCmdPushConstants(
+                commandBuffers[i],
+                computeProgram->getLayout(),
+                computeProgram->getPushConstantStages(),
+                0,
+                sizeof(cullStageConstant),
+                &cullStageConstant);
+            vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
+            endLableRegion();
+        }
+        // EARLY CULLING PASS COMPUTE SHADER END
+
         // Barrier between compute and vertex shading.
         vkCmdPipelineBarrier(
             commandBuffers[i],
@@ -2759,14 +2818,11 @@ void VulkanObject::createCommandBuffers() {
             0,
             VK_NULL_HANDLE);
 
-        // struct to specify render pass info
-        VkRenderPassBeginInfo shadowRenderPassInfo{};
-        // assign type
+        /*VkRenderPassBeginInfo shadowRenderPassInfo{};
         shadowRenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        // assign our previously created render pass
+
         shadowRenderPassInfo.renderPass = shadowPass.renderPass;
         // assign the current framebuffer
-        //shadowRenderPassInfo.framebuffer = swapChainFramebuffers[i
         shadowRenderPassInfo.framebuffer = shadowPass.frameBuffer;
         // screen space offset
         shadowRenderPassInfo.renderArea.offset = { 0, 0 };
@@ -2785,9 +2841,6 @@ void VulkanObject::createCommandBuffers() {
 
         vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
 
-        VkBuffer vertexBuffers[] = { vertexBuffer };
-        VkDeviceSize offsets[] = { 0 };
-
         vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
@@ -2795,74 +2848,86 @@ void VulkanObject::createCommandBuffers() {
 
         vkCmdDrawIndexedIndirect(commandBuffers[i], indirectLodSSBO[i], 0, modelTransforms->modelMatricies.size(), 32);
 
-        vkCmdEndRenderPass(commandBuffers[i]);
+        vkCmdEndRenderPass(commandBuffers[i]);*/
 
-        // struct to specify render pass info
-        VkRenderPassBeginInfo renderPassInfo{};
-        // assign type
-        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        // assign our previously created render pass
-        renderPassInfo.renderPass = earlyGeometryPass;
-        // assign the current framebuffer
-        renderPassInfo.framebuffer = swapChainFramebuffers[i];
-        // screen space offset
-        renderPassInfo.renderArea.offset = { 0, 0 };
-        // width and height of render
-        renderPassInfo.renderArea.extent = swapChainExtent;
+        std::array<VkImageMemoryBarrier, 1> renderPassOutputFormatConversions{};
+        renderPassOutputFormatConversions[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        renderPassOutputFormatConversions[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        renderPassOutputFormatConversions[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        renderPassOutputFormatConversions[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        renderPassOutputFormatConversions[0].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        renderPassOutputFormatConversions[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        renderPassOutputFormatConversions[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        renderPassOutputFormatConversions[0].image = shadowPass.depth.image;
+        renderPassOutputFormatConversions[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        renderPassOutputFormatConversions[0].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+        renderPassOutputFormatConversions[0].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-        std::array<VkClearValue, 4> clearValues{};
-        clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-        clearValues[1].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-        clearValues[2].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-        clearValues[3].depthStencil = { 1.0f, 0 };
-
-        // number of clear colour
-        renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-        // clear colour value
-        renderPassInfo.pClearValues = clearValues.data();
-
-        // functions starting in vkCmd record commands. This ebgins the process
-        vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        // bind the graphics pipeline we set up
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-
-        vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, geometryProgram->getLayout(), 0, 1, &descriptorSets[i], 0, nullptr);
-
-        vkCmdDrawIndexedIndirect(commandBuffers[i], indirectLodSSBO[i], 0, modelTransforms->modelMatricies.size(), 32);
-
-        vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
-
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline);
-
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingProgram->getLayout(), 0, 1, &lightingDescriptorSets[i], 0, nullptr);
-
-        vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
-
-        // finish the render pass
-        vkCmdEndRenderPass(commandBuffers[i]);
+        std::array<VkMemoryBarrier, 1> renderPassMemoryOutputFormatConversions{};
+        renderPassMemoryOutputFormatConversions[0].sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        renderPassMemoryOutputFormatConversions[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        renderPassMemoryOutputFormatConversions[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 
         vkCmdPipelineBarrier(
             commandBuffers[i],
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_DEPENDENCY_BY_REGION_BIT,
+            renderPassMemoryOutputFormatConversions.size(),
+            renderPassMemoryOutputFormatConversions.data(),
             0,
             0,
-            VK_NULL_HANDLE,
-            0,
-            VK_NULL_HANDLE,
-            0,
-            VK_NULL_HANDLE);
-        // Bind the compute pipeline.
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, depthPyramidComputePipeline);
+            renderPassOutputFormatConversions.size(),
+            renderPassOutputFormatConversions.data());
+
+        // EARLY RENDER PASS BEGIN
+        {
+            std::array<float, 4> labelCol = { 0.4f, 0.4f, 1.0f, 1.0f };
+            beginLableRegion("Early render", labelCol);
+            VkRenderPassBeginInfo renderPassInfo{};
+            renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassInfo.renderPass = earlyGeometryPass;
+            renderPassInfo.framebuffer = swapChainFramebuffers[i];
+            renderPassInfo.renderArea.offset = { 0, 0 };
+            renderPassInfo.renderArea.extent = swapChainExtent;
+
+            std::array<VkClearValue, 4> clearValues{};
+            clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[1].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[2].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[3].depthStencil = { 1.0f, 0 };
+
+            renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+            renderPassInfo.pClearValues = clearValues.data();
+
+            vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, geometryProgram->getLayout(), 0, 1, &descriptorSets[i], 0, nullptr);
+
+            vkCmdDrawIndexedIndirect(commandBuffers[i], indirectLodSSBO[i], 0, modelTransforms->modelMatricies.size(), 32);
+
+            vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
+
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline);
+
+            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingProgram->getLayout(), 0, 1, &lightingDescriptorSets[i], 0, nullptr);
+
+            vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+
+            vkCmdEndRenderPass(commandBuffers[i]);
+            endLableRegion();
+        }
+        // EARLY RENDER PASS END
 
         std::array<VkImageMemoryBarrier, 2> initialPyramidBarriers{};
         initialPyramidBarriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        initialPyramidBarriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        initialPyramidBarriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        initialPyramidBarriers[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        initialPyramidBarriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
         initialPyramidBarriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         initialPyramidBarriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
         initialPyramidBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -2873,8 +2938,8 @@ void VulkanObject::createCommandBuffers() {
         initialPyramidBarriers[0].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
         initialPyramidBarriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        initialPyramidBarriers[1].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        initialPyramidBarriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        initialPyramidBarriers[1].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        initialPyramidBarriers[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
         initialPyramidBarriers[1].oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         initialPyramidBarriers[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         initialPyramidBarriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -2886,8 +2951,8 @@ void VulkanObject::createCommandBuffers() {
 
         vkCmdPipelineBarrier(
             commandBuffers[i],
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
             VK_DEPENDENCY_BY_REGION_BIT,
             0,
             0,
@@ -2896,133 +2961,143 @@ void VulkanObject::createCommandBuffers() {
             initialPyramidBarriers.size(),
             initialPyramidBarriers.data());
 
-        for (size_t depthPyramidLevel = 0; depthPyramidLevel < depthPyramidViews.size(); ++depthPyramidLevel)
+        // DEPTH PYRAMID CONSTRUCTION BEGIN
         {
-            VkDescriptorSetAllocateInfo allocateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+            std::array<float, 4> labelCol = { 0.63f, 1.0f, 0.63f, 1.0f };
+            beginLableRegion("Depth pyramid construction", labelCol);
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, depthPyramidComputePipeline);
 
-            allocateInfo.descriptorPool = depthPyramidComputeDescriptorPool;
-            allocateInfo.descriptorSetCount = 1;
-            allocateInfo.pSetLayouts = &(depthPyramidComputeProgram->getSetLayout());
-
-            VkDescriptorSet set = 0;
-            if (vkAllocateDescriptorSets(device, &allocateInfo, &set) != VK_SUCCESS)
+            for (size_t depthPyramidLevel = 0; depthPyramidLevel < depthPyramidViews.size(); ++depthPyramidLevel)
             {
-                std::cout << "could nto allocate descriptor sets" << std::endl;
-                throw std::runtime_error("could nto allocate descriptor sets");
+                VkDescriptorSetAllocateInfo allocateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+
+                allocateInfo.descriptorPool = depthPyramidComputeDescriptorPool;
+                allocateInfo.descriptorSetCount = 1;
+                allocateInfo.pSetLayouts = &(depthPyramidComputeProgram->getSetLayout());
+
+                VkDescriptorSet set = 0;
+                if (vkAllocateDescriptorSets(device, &allocateInfo, &set) != VK_SUCCESS)
+                {
+                    std::cout << "could not allocate descriptor sets" << std::endl;
+                    throw std::runtime_error("could nto allocate descriptor sets");
+                }
+
+                std::array<VkWriteDescriptorSet, 2> depthPyramidComputeDescriptorWrites{};
+
+                depthPyramidComputeDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                depthPyramidComputeDescriptorWrites[0].dstSet = set;
+                depthPyramidComputeDescriptorWrites[0].dstBinding = 0;
+                depthPyramidComputeDescriptorWrites[0].dstArrayElement = 0;
+                depthPyramidComputeDescriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                depthPyramidComputeDescriptorWrites[0].descriptorCount = 1;
+                depthPyramidComputeDescriptorWrites[0].pImageInfo = depthPyramidDescriptorInfo[depthPyramidLevel].getPtr();
+
+                depthPyramidComputeDescriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                depthPyramidComputeDescriptorWrites[1].dstSet = set;
+                depthPyramidComputeDescriptorWrites[1].dstBinding = 1;
+                depthPyramidComputeDescriptorWrites[1].dstArrayElement = 0;
+                depthPyramidComputeDescriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                depthPyramidComputeDescriptorWrites[1].descriptorCount = 1;
+                auto initialDepthDescInfo = mc::DescriptorInfo<VkDescriptorImageInfo>{
+                    depthSampler,
+                    offScreenPass.depth.view,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+                depthPyramidComputeDescriptorWrites[1].pImageInfo =
+                    depthPyramidLevel == 0 ? initialDepthDescInfo.getPtr() : depthPyramidDescriptorInfo[depthPyramidLevel - 1].getPtr();
+
+                //vkUpdateDescriptorSetWithTemplate(device, set, depthPyramidComputeProgram.updateTemplate, descriptors);
+
+                vkUpdateDescriptorSets(
+                    device,
+                    static_cast<uint32_t>(depthPyramidComputeDescriptorWrites.size()),
+                    depthPyramidComputeDescriptorWrites.data(),
+                    0,
+                    nullptr);
+
+                /*vkUpdateDescriptorSets(
+                    device,
+                    static_cast<uint32_t>(depthPyramidComputeDescriptorWrites.size()),
+                    depthPyramidComputeDescriptorWrites.data(),
+                    0,
+                    nullptr);*/
+                    /*vkCmdPushDescriptorSetKHR(
+                        commandBuffers[i],
+                        VK_PIPELINE_BIND_POINT_COMPUTE,
+                        depthPyramidComputeProgram->getLayout(),
+                        1,
+                        depthPyramidComputeDescriptorWrites.size(),
+                        depthPyramidComputeDescriptorWrites.data());*/
+                        // Bind descriptor set.
+                vkCmdBindDescriptorSets(
+                    commandBuffers[i],
+                    VK_PIPELINE_BIND_POINT_COMPUTE,
+                    depthPyramidComputeProgram->getLayout(),
+                    0,
+                    1,
+                    &set,
+                    0,
+                    nullptr);
+                glm::vec2 reduceData;
+                if (depthPyramidLevel == 0)
+                {
+                    reduceData = {
+                        static_cast<float>(swapChainExtent.width) / 2.0f,
+                        static_cast<float>(swapChainExtent.height) / 2.0f };
+                }
+                else
+                {
+                    reduceData = {
+                        getPow2Size(swapChainExtent.width, swapChainExtent.height) / std::pow(2, depthPyramidLevel + 1),
+                        getPow2Size(swapChainExtent.width, swapChainExtent.height) / std::pow(2, depthPyramidLevel + 1) };
+                }
+
+                vkCmdPushConstants(
+                    commandBuffers[i],
+                    depthPyramidComputeProgram->getLayout(),
+                    depthPyramidComputeProgram->getPushConstantStages(),
+                    0,
+                    sizeof(reduceData),
+                    &reduceData);
+                // Dispatch compute job.
+                vkCmdDispatch(
+                    commandBuffers[i],
+                    std::max(uint32_t{ 1 }, (static_cast<uint32_t>(swapChainExtent.width / std::pow(2, depthPyramidLevel + 1)) / 32) + 1),
+                    std::max(uint32_t{ 1 }, (static_cast<uint32_t>(swapChainExtent.height / std::pow(2, depthPyramidLevel + 1)) / 32) + 1),
+                    1);
+
+                VkImageMemoryBarrier reduceBarrier{};
+                reduceBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                reduceBarrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+                reduceBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+                reduceBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+                reduceBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+                reduceBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                reduceBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                reduceBarrier.image = depthPyramidImage;
+                reduceBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                reduceBarrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+                reduceBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+                vkCmdPipelineBarrier(
+                    commandBuffers[i],
+                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                    VK_DEPENDENCY_BY_REGION_BIT,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    &reduceBarrier);
             }
-
-            std::array<VkWriteDescriptorSet, 2> depthPyramidComputeDescriptorWrites{};
-
-            depthPyramidComputeDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            depthPyramidComputeDescriptorWrites[0].dstSet = set;
-            depthPyramidComputeDescriptorWrites[0].dstBinding = 0;
-            depthPyramidComputeDescriptorWrites[0].dstArrayElement = 0;
-            depthPyramidComputeDescriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            depthPyramidComputeDescriptorWrites[0].descriptorCount = 1;
-            depthPyramidComputeDescriptorWrites[0].pImageInfo = depthPyramidDescriptorInfo[depthPyramidLevel].getPtr();
-
-            depthPyramidComputeDescriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            depthPyramidComputeDescriptorWrites[1].dstSet = set;
-            depthPyramidComputeDescriptorWrites[1].dstBinding = 1;
-            depthPyramidComputeDescriptorWrites[1].dstArrayElement = 0;
-            depthPyramidComputeDescriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            depthPyramidComputeDescriptorWrites[1].descriptorCount = 1;
-            auto initialDepthDescInfo = mc::DescriptorInfo<VkDescriptorImageInfo>{
-                depthSampler,
-                offScreenPass.depth.view,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            depthPyramidComputeDescriptorWrites[1].pImageInfo =
-                depthPyramidLevel == 0 ? initialDepthDescInfo.getPtr() : depthPyramidDescriptorInfo[depthPyramidLevel - 1].getPtr();
-
-            //vkUpdateDescriptorSetWithTemplate(device, set, depthPyramidComputeProgram.updateTemplate, descriptors);
-
-            vkUpdateDescriptorSets(
-                device,
-                static_cast<uint32_t>(depthPyramidComputeDescriptorWrites.size()),
-                depthPyramidComputeDescriptorWrites.data(),
-                0,
-                nullptr);
-
-            /*vkUpdateDescriptorSets(
-                device,
-                static_cast<uint32_t>(depthPyramidComputeDescriptorWrites.size()),
-                depthPyramidComputeDescriptorWrites.data(),
-                0,
-                nullptr);*/
-            /*vkCmdPushDescriptorSetKHR(
-                commandBuffers[i],
-                VK_PIPELINE_BIND_POINT_COMPUTE,
-                depthPyramidComputeProgram->getLayout(),
-                1,
-                depthPyramidComputeDescriptorWrites.size(),
-                depthPyramidComputeDescriptorWrites.data());*/
-            // Bind descriptor set.
-            vkCmdBindDescriptorSets(
-                commandBuffers[i],
-                VK_PIPELINE_BIND_POINT_COMPUTE,
-                depthPyramidComputeProgram->getLayout(),
-                0,
-                1,
-                &set,
-                0,
-                nullptr);
-            glm::vec2 reduceData;
-            if (depthPyramidLevel == 0)
-            {
-                reduceData = {
-                    static_cast<float>(swapChainExtent.width) / 2.0f,
-                    static_cast<float>(swapChainExtent.height) / 2.0f };
-            }
-            else
-            {
-                reduceData = {
-                    getPow2Size(swapChainExtent.width, swapChainExtent.height) / std::pow(2, depthPyramidLevel + 1),
-                    getPow2Size(swapChainExtent.width, swapChainExtent.height) / std::pow(2, depthPyramidLevel + 1)};
-            }
-
-            vkCmdPushConstants(
-                commandBuffers[i],
-                depthPyramidComputeProgram->getLayout(),
-                depthPyramidComputeProgram->getPushConstantStages(),
-                0,
-                sizeof(reduceData),
-                &reduceData);
-            // Dispatch compute job.
-            vkCmdDispatch(
-                commandBuffers[i],
-                std::max(uint32_t{1}, (static_cast<uint32_t>(swapChainExtent.width / std::pow(2, depthPyramidLevel + 1)) / 32) + 1),
-                std::max(uint32_t{1}, (static_cast<uint32_t>(swapChainExtent.height / std::pow(2, depthPyramidLevel + 1)) / 32) + 1),
-                1);
-
-            VkImageMemoryBarrier reduceBarrier{};
-            reduceBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            reduceBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            reduceBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            reduceBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-            reduceBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-            reduceBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            reduceBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            reduceBarrier.image = depthPyramidImage;
-            reduceBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            reduceBarrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-            reduceBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-            vkCmdPipelineBarrier(
-                commandBuffers[i],
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK_DEPENDENCY_BY_REGION_BIT,
-                0,
-                0,
-                0,
-                0,
-                1,
-                &reduceBarrier);
+            endLableRegion();
         }
-        std::array<VkImageMemoryBarrier, 1> finalPyramidBarriers{};
+        // DEPTH PYRAMID CONSTRUCTION END
+
+        std::array<VkImageMemoryBarrier, 2> finalPyramidBarriers{};
         finalPyramidBarriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        finalPyramidBarriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        finalPyramidBarriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        finalPyramidBarriers[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        finalPyramidBarriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
         finalPyramidBarriers[0].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         finalPyramidBarriers[0].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         finalPyramidBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -3031,6 +3106,18 @@ void VulkanObject::createCommandBuffers() {
         finalPyramidBarriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         finalPyramidBarriers[0].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
         finalPyramidBarriers[0].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+        finalPyramidBarriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        finalPyramidBarriers[1].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        finalPyramidBarriers[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+        finalPyramidBarriers[1].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        finalPyramidBarriers[1].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        finalPyramidBarriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        finalPyramidBarriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        finalPyramidBarriers[1].image = meshesDrawnDebugViewImage;
+        finalPyramidBarriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        finalPyramidBarriers[1].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+        finalPyramidBarriers[1].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
         // Barrier between compute and vertex shading.
         vkCmdPipelineBarrier(
@@ -3045,53 +3132,34 @@ void VulkanObject::createCommandBuffers() {
             finalPyramidBarriers.size(),
             finalPyramidBarriers.data());
 
-        /*std::array<VkImageMemoryBarrier, 1> meshesDrawnDebugViewPreClearBarriers{};
-        finalPyramidBarriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        finalPyramidBarriers[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-        finalPyramidBarriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-        finalPyramidBarriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-        finalPyramidBarriers[0].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        finalPyramidBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        finalPyramidBarriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        finalPyramidBarriers[0].image = meshesDrawnDebugViewImage;
-        finalPyramidBarriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        finalPyramidBarriers[0].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-        finalPyramidBarriers[0].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+        // CLEAR CULLING DEBUG VIEW BEGIN
+        {
+            std::array<float, 4> labelCol = { 1.0f, 1.0f, 0.6f, 1.0f };
+            beginLableRegion("Debug image clear", labelCol);
+            VkImageSubresourceRange imageSubresourceRange{};
+            imageSubresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imageSubresourceRange.baseMipLevel = 0;
+            imageSubresourceRange.levelCount = 1;
+            imageSubresourceRange.baseArrayLayer = 0;
+            imageSubresourceRange.layerCount = 1;
 
-        // Barrier between compute and vertex shading.
-        vkCmdPipelineBarrier(
-            commandBuffers[i],
-            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-            VK_DEPENDENCY_BY_REGION_BIT,
-            0,
-            0,
-            0,
-            0,
-            meshesDrawnDebugViewClearBarriers.size(),
-            meshesDrawnDebugViewClearBarriers.data());*/
+            const VkClearColorValue clearValue = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-        VkImageSubresourceRange imageSubresourceRange{};
-        imageSubresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        imageSubresourceRange.baseMipLevel = 0;
-        imageSubresourceRange.levelCount = 1;
-        imageSubresourceRange.baseArrayLayer = 0;
-        imageSubresourceRange.layerCount = 1;
-
-        const VkClearColorValue clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
-
-        vkCmdClearColorImage(
-            commandBuffers[i],
-            meshesDrawnDebugViewImage,
-            VK_IMAGE_LAYOUT_GENERAL,
-            &clearValue,
-            1,
-            &imageSubresourceRange);
+            vkCmdClearColorImage(
+                commandBuffers[i],
+                meshesDrawnDebugViewImage,
+                VK_IMAGE_LAYOUT_GENERAL,
+                &clearValue,
+                1,
+                &imageSubresourceRange);
+            endLableRegion();
+        }
+        // CLEAR CULLING DEBUG VIEW END
 
         std::array<VkImageMemoryBarrier, 1> meshesDrawnDebugViewPostClearBarriers{};
         meshesDrawnDebugViewPostClearBarriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         meshesDrawnDebugViewPostClearBarriers[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-        meshesDrawnDebugViewPostClearBarriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        meshesDrawnDebugViewPostClearBarriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
         meshesDrawnDebugViewPostClearBarriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
         meshesDrawnDebugViewPostClearBarriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
         meshesDrawnDebugViewPostClearBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -3114,72 +3182,110 @@ void VulkanObject::createCommandBuffers() {
             meshesDrawnDebugViewPostClearBarriers.size(),
             meshesDrawnDebugViewPostClearBarriers.data());
 
-        // Bind the compute pipeline.
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
-        // Bind descriptor set.
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computeProgram->getLayout(), 0, 1,
-            &computeDescriptorSets[i], 0, nullptr);
-        cullStageConstant = false;
-        vkCmdPushConstants(
-            commandBuffers[i],
-            computeProgram->getLayout(),
-            computeProgram->getPushConstantStages(),
-            0,
-            sizeof(cullStageConstant),
-            &cullStageConstant);
-        // Dispatch compute job.
-        vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
+        // LATE CULLING PASS COMPUTE SHADER BEGIN
+        {
+            std::array<float, 4> labelCol = { 1.0f, 0.2f, 0.2f, 1.0f };
+            beginLableRegion("Late culling compute", labelCol);
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computeProgram->getLayout(), 0, 1,
+                &computeDescriptorSets[i], 0, nullptr);
+            vk::Bool32 cullStageConstant = false;
+            vkCmdPushConstants(
+                commandBuffers[i],
+                computeProgram->getLayout(),
+                computeProgram->getPushConstantStages(),
+                0,
+                sizeof(cullStageConstant),
+                &cullStageConstant);
+            vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
+            endLableRegion();
+        }
+        // LATE CULLING PASS COMPUTE SHADER END
+
+        std::array<VkImageMemoryBarrier, 3> lateRenderPassImageBarriers{};
+        size_t lateRenderPassImageIdx = 0;
+        for (const auto& image : {offScreenPass.albedo.image,
+                                              offScreenPass.normal.image,
+                                              offScreenPass.depth.image})
+        {
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].oldLayout = image != offScreenPass.depth.image ?
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].newLayout = image != offScreenPass.depth.image ?
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].image = image;
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].subresourceRange.aspectMask = image != offScreenPass.depth.image ?
+                VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+            lateRenderPassImageBarriers[lateRenderPassImageIdx].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+            ++lateRenderPassImageIdx;
+        }
+
+        std::array<VkMemoryBarrier, 1> lateRenderPassMemoryBarriers{};
+        lateRenderPassMemoryBarriers[0].sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        lateRenderPassMemoryBarriers[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        lateRenderPassMemoryBarriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+
         // Barrier between compute and vertex shading.
         vkCmdPipelineBarrier(
             commandBuffers[i],
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-
-            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_DEPENDENCY_BY_REGION_BIT,
+            lateRenderPassMemoryBarriers.size(),
+            lateRenderPassMemoryBarriers.data(),
             0,
             0,
-            VK_NULL_HANDLE,
-            0,
-            VK_NULL_HANDLE,
-            0,
-            VK_NULL_HANDLE);
+            lateRenderPassImageBarriers.size(),
+            lateRenderPassImageBarriers.data());
 
-        // assign our previously created render pass
-        renderPassInfo.renderPass = lateGeometryPass;
-        // assign the current framebuffer
-        renderPassInfo.framebuffer = swapChainFramebuffers[i];
-        // screen space offset
-        renderPassInfo.renderArea.offset = { 0, 0 };
-        // width and height of render
-        renderPassInfo.renderArea.extent = swapChainExtent;
+        // LATE RENDER PASS BEGIN
+        {
+            std::array<float, 4> labelCol = { 0.4f, 0.4f, 1.0f, 1.0f };
+            beginLableRegion("Late render", labelCol);
+            VkRenderPassBeginInfo renderPassInfo{};
+            renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassInfo.renderPass = lateGeometryPass;
+            renderPassInfo.framebuffer = swapChainFramebuffers[i];
+            renderPassInfo.renderArea.offset = { 0, 0 };
+            renderPassInfo.renderArea.extent = swapChainExtent;
 
-        // number of clear colour
-        renderPassInfo.clearValueCount = 0;
-        // clear colour value
-        renderPassInfo.pClearValues = nullptr;
+            std::array<VkClearValue, 4> clearValues{};
+            clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[1].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[2].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[3].depthStencil = { 1.0f, 0 };
 
-        // functions starting in vkCmd record commands. This ebgins the process
-        vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+            renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+            renderPassInfo.pClearValues = clearValues.data();
 
-        // bind the graphics pipeline we set up
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lateGraphicsPipeline);
+            vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lateGraphicsPipeline);
 
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, geometryProgram->getLayout(), 0, 1, &descriptorSets[i], 0, nullptr);
+            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-        vkCmdDrawIndexedIndirect(commandBuffers[i], indirectLodSSBO[i], 0, modelTransforms->modelMatricies.size(), 32);
+            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, geometryProgram->getLayout(), 0, 1, &descriptorSets[i], 0, nullptr);
 
-        vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdDrawIndexedIndirect(commandBuffers[i], indirectLodSSBO[i], 0, modelTransforms->modelMatricies.size(), 32);
 
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline);
+            vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingProgram->getLayout(), 0, 1, &lightingDescriptorSets[i], 0, nullptr);
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline);
 
-        vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingProgram->getLayout(), 0, 1, &lightingDescriptorSets[i], 0, nullptr);
 
-        // finish the render pass
-        vkCmdEndRenderPass(commandBuffers[i]);
+            vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+
+            vkCmdEndRenderPass(commandBuffers[i]);
+            endLableRegion();
+        }
+        // LATE RENDER PASS END
 
         vkCmdPipelineBarrier(
             commandBuffers[i],
@@ -3372,7 +3478,30 @@ void VulkanObject::drawFrame() {
         imgui_info.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(imgui_command_buffers[imageIndex], &imgui_info);
     }
+    auto beginLableRegion = [&](std::string_view labelName, std::span<float, 4> color)
+    {
+        PFN_vkCmdBeginDebugUtilsLabelEXT pfnCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT");
 
+        VkDebugUtilsLabelEXT label{};
+        label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+        label.pNext = nullptr;
+        label.pLabelName = labelName.data();
+        label.color[0] = color[0];
+        label.color[1] = color[1];
+        label.color[2] = color[2];
+        label.color[3] = color[3];
+        pfnCmdBeginDebugUtilsLabelEXT(imgui_command_buffers[imageIndex], &label);
+    };
+
+    auto endLableRegion = [&]()
+    {
+        PFN_vkCmdEndDebugUtilsLabelEXT pfnCmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT");
+
+        pfnCmdEndDebugUtilsLabelEXT(imgui_command_buffers[imageIndex]);
+    };
+
+    std::array<float, 4> color{ 0.0f, 1.0f, 1.0f, 1.0f };
+    beginLableRegion("ImGui pass", color);
     {
         VkRenderPassBeginInfo info = {};
         info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -3388,6 +3517,7 @@ void VulkanObject::drawFrame() {
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), imgui_command_buffers[imageIndex]);
 
     vkCmdEndRenderPass(imgui_command_buffers[imageIndex]);
+    endLableRegion();
     vkEndCommandBuffer(imgui_command_buffers[imageIndex]);
 
     std::array<VkCommandBuffer, 2> submitCommandBuffers = { commandBuffers[imageIndex], imgui_command_buffers[imageIndex] };
@@ -3540,39 +3670,43 @@ void VulkanObject::updateSSBO() {
     modelTransforms = std::make_unique<ModelTransforms>();
     modelScales = std::make_unique<decltype(modelScales)::element_type>();
 
-    auto duck_0_trans = glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, -5.0f));
-    auto duck_1_trans = glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, 5.0f));
-    modelScales->operator[](0) = 0.1;
-    auto duck_0_scale = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](0)));
-    modelScales->operator[](1) = 5.0;
-    auto duck_1_scale = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](1)));
-    auto duck_0_rot = glm::mat4(1.0);
-    auto duck_1_rot = glm::mat4(1.0);
-
-    modelTransforms->modelMatricies[0] = duck_0_trans * duck_0_rot * duck_0_scale;
-    modelTransforms->modelMatricies[1] = duck_1_trans * duck_1_rot * duck_1_scale;
-    
-
-    /*std::random_device dev;
-    std::mt19937 rng(dev());
-    std::uniform_real_distribution<float> translation_dist(-5.0f, 5.0f);
-    std::uniform_real_distribution<float> scale_dist(0.1f, 5.0f);
-    std::uniform_real_distribution<float> rotation_dist(0.0f, 2.0f * glm::pi<float>());
-
-    //std::fill(std::begin(ssbo->modelMatricies), std::end(ssbo->modelMatricies), glm::mat4{ 1.0f });
-    for (size_t matrixIndex = 0; matrixIndex < modelTransforms->modelMatricies.size(); ++matrixIndex)
+    if constexpr (chickenCount == 2)
     {
-        glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(translation_dist(rng), translation_dist(rng), translation_dist(rng)))
-            * glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, 0.0f));
-        float scale = scale_dist(rng);
-        modelScales->operator[](matrixIndex) = scale;
-        glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](matrixIndex)));
-        glm::mat4 rotation_matrix = glm::rotate(rotation_dist(rng), glm::vec3(1.0f, 0.0f, 0.0f));
-        rotation_matrix *= glm::rotate(rotation_dist(rng), glm::vec3(0.0f, 1.0f, 0.0f));
-        rotation_matrix *= glm::rotate(rotation_dist(rng), glm::vec3(0.0f, 0.0f, 1.0f));
+        auto duck_0_trans = glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, -5.0f));
+        auto duck_1_trans = glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, 5.0f));
+        modelScales->operator[](0) = 0.1;
+        auto duck_0_scale = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](0)));
+        modelScales->operator[](1) = 5.0;
+        auto duck_1_scale = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](1)));
+        auto duck_0_rot = glm::mat4(1.0);
+        auto duck_1_rot = glm::mat4(1.0);
 
-        modelTransforms->modelMatricies[matrixIndex] = translation_matrix * rotation_matrix * scale_matrix;
-    }*/
+        modelTransforms->modelMatricies[0] = duck_0_trans * duck_0_rot * duck_0_scale;
+        modelTransforms->modelMatricies[1] = duck_1_trans * duck_1_rot * duck_1_scale;
+    }
+    else
+    {
+        std::random_device dev;
+        std::mt19937 rng(dev());
+        std::uniform_real_distribution<float> translation_dist(-5.0f, 5.0f);
+        std::uniform_real_distribution<float> scale_dist(0.1f, 5.0f);
+        std::uniform_real_distribution<float> rotation_dist(0.0f, 2.0f * glm::pi<float>());
+
+        //std::fill(std::begin(ssbo->modelMatricies), std::end(ssbo->modelMatricies), glm::mat4{ 1.0f });
+        for (size_t matrixIndex = 0; matrixIndex < modelTransforms->modelMatricies.size(); ++matrixIndex)
+        {
+            glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(translation_dist(rng), translation_dist(rng), translation_dist(rng)))
+                * glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, 0.0f));
+            float scale = scale_dist(rng);
+            modelScales->operator[](matrixIndex) = scale;
+            glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](matrixIndex)));
+            glm::mat4 rotation_matrix = glm::rotate(rotation_dist(rng), glm::vec3(1.0f, 0.0f, 0.0f));
+            rotation_matrix *= glm::rotate(rotation_dist(rng), glm::vec3(0.0f, 1.0f, 0.0f));
+            rotation_matrix *= glm::rotate(rotation_dist(rng), glm::vec3(0.0f, 0.0f, 1.0f));
+
+            modelTransforms->modelMatricies[matrixIndex] = translation_matrix * rotation_matrix * scale_matrix;
+        }
+    }
 
     void* data;
     vkMapMemory(device, SSBOMemory, 0, sizeof(ModelTransforms), 0, &data);

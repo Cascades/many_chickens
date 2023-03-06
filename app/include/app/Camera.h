@@ -176,7 +176,7 @@ namespace mc
             }
             else if (debounce > 0)
             {
-                if (debounce < 500)
+                if (debounce < 100)
                 {
                     debounce++;
                 }

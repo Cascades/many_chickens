@@ -248,9 +248,9 @@ void late(vec4 mvPos)
             if (originalDepth != 1234.0)
             {
                 float linearlizedDepth = linearizeDepth(originalDepth, -1.0, -250.0);
-                float depthSphere = -1 * (mvPos.z - radius - ubo.zNear) - 3.0;
+                float depthSphere = -1 * (mvPos.z - radius - ubo.zNear) - 1.0;
 
-                visible = visible && depthSphere - 0.0 <= linearlizedDepth;
+                visible = visible && depthSphere <= linearlizedDepth;
             }
         }
 
@@ -289,12 +289,18 @@ void late(vec4 mvPos)
     modelXZ *= vec2(100.0, 100.0);
     ivec2 debugMeshPos = ivec2(int(modelXZ[0]), int(modelXZ[1]));
 
-    vec4 abc[5] = vec4[](vec4(1.0, 0.0, 0.0, 1.0), vec4(0.0, 1.0, 0.0, 1.0), vec4(0.0, 0.0, 1.0, 1.0), vec4(1.0, 1.0, 0.0, 1.0), vec4(0.0, 1.0, 1.0, 1.0));
-
     if (visible)
     {
         drawnLastFrameBuffer.data[gl_GlobalInvocationID.x] = true;
-        imageStore(meshesDrawnDebugView, debugMeshPos, abc[gl_GlobalInvocationID.x % 5]);
+        if (sphereProjectionDebugBuffer.data.length() < 6)
+        {
+            vec4 abc[5] = vec4[](vec4(1.0, 0.0, 0.0, 1.0), vec4(0.0, 1.0, 0.0, 1.0), vec4(0.0, 0.0, 1.0, 1.0), vec4(1.0, 1.0, 0.0, 1.0), vec4(0.0, 1.0, 1.0, 1.0));
+            imageStore(meshesDrawnDebugView, debugMeshPos, abc[gl_GlobalInvocationID.x % 5]);
+        }
+        else
+        {
+            imageStore(meshesDrawnDebugView, debugMeshPos, vec4(1.0, 0.0, 0.0, 1.0));
+        }
     }
     else
     {
