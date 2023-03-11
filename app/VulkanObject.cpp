@@ -2737,6 +2737,11 @@ void VulkanObject::createCommandBuffers() {
         {
             PFN_vkCmdBeginDebugUtilsLabelEXT pfnCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT");
 
+            if (!pfnCmdBeginDebugUtilsLabelEXT)
+            {
+                return;
+            }
+
             VkDebugUtilsLabelEXT label{};
             label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
             label.pNext = nullptr;
@@ -2751,6 +2756,11 @@ void VulkanObject::createCommandBuffers() {
         auto endLableRegion = [&]()
         {
             PFN_vkCmdEndDebugUtilsLabelEXT pfnCmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT");
+
+            if (!pfnCmdEndDebugUtilsLabelEXT)
+            {
+                return;
+            }
 
             pfnCmdEndDebugUtilsLabelEXT(commandBuffers[i]);
         };
@@ -3482,6 +3492,11 @@ void VulkanObject::drawFrame() {
     {
         PFN_vkCmdBeginDebugUtilsLabelEXT pfnCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT");
 
+        if (!pfnCmdBeginDebugUtilsLabelEXT)
+        {
+            return;
+        }
+
         VkDebugUtilsLabelEXT label{};
         label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
         label.pNext = nullptr;
@@ -3496,6 +3511,11 @@ void VulkanObject::drawFrame() {
     auto endLableRegion = [&]()
     {
         PFN_vkCmdEndDebugUtilsLabelEXT pfnCmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT");
+
+        if (!pfnCmdEndDebugUtilsLabelEXT)
+        {
+            return;
+        }
 
         pfnCmdEndDebugUtilsLabelEXT(imgui_command_buffers[imageIndex]);
     };
