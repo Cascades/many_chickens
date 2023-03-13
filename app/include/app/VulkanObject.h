@@ -189,7 +189,9 @@ private:
     std::vector<VkBuffer> sphereProjectionDebugSSBO;
     std::vector<VkDeviceMemory> sphereProjectionDebugSSBOMemory;
 
-    static constexpr size_t chickenCount = 10000;
+    static constexpr size_t chickenCount = 1000;
+
+    float timestampPeriod = 1.0f;
 
     struct ModelTransforms {
         std::array<glm::mat4, chickenCount> modelMatricies{};
@@ -239,6 +241,23 @@ private:
 
     std::string MODEL_PATH;
     std::string TEXTURE_PATH;
+
+    std::vector<VkQueryPool> queryPools;
+    std::pair<uint32_t, uint32_t> earlyCullQueryIndices;
+    std::pair<uint32_t, uint32_t> earlyRenderQueryIndices;
+    std::pair<uint32_t, uint32_t> depthPyramidQueryIndices;
+    std::pair<uint32_t, uint32_t> lateCullQueryIndices;
+    std::pair<uint32_t, uint32_t> lateRenderQueryIndices;
+
+    static constexpr size_t queryHistorySamples = 1000;
+
+    std::array<float, queryHistorySamples> earlyCullTimeHistory = {};
+    std::array<float, queryHistorySamples> earlyRenderTimeHistory = {};
+    std::array<float, queryHistorySamples> depthPyramidTimeHistory = {};
+    std::array<float, queryHistorySamples> lateCullTimeHistory = {};
+    std::array<float, queryHistorySamples> lateRenderTimeHistory = {};
+
+    bool updatingImGuiQueryData = true;
 
     bool model_stage_on = false;
     bool texture_stage_on = false;
@@ -297,6 +316,8 @@ private:
         uint32_t mipLevels = 1);
 
     void createDescriptorPool();
+
+    void createQueryPools();
 
     void createUniformBuffers();
 

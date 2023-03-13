@@ -236,7 +236,7 @@ void late(vec4 mvPos)
         if (lodLookupCoord.x < 0.0 || lodLookupCoord.x > 1.0 ||
             lodLookupCoord.y < 0.0 || lodLookupCoord.y > 1.0)
         {
-            sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(1.0);
+            sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(1212.0);
         }
         else
         {
@@ -248,13 +248,15 @@ void late(vec4 mvPos)
             if (originalDepth != 1234.0)
             {
                 float linearlizedDepth = linearizeDepth(originalDepth, -1.0, -250.0);
-                float depthSphere = -1 * (mvPos.z - radius - ubo.zNear) - 1.0;
+                float depthSphere = -1 * (mvPos.z - radius - ubo.zNear) + 3.0;
 
                 visible = visible && depthSphere <= linearlizedDepth;
+
+                sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(depthSphere, linearlizedDepth, level, originalDepth);
             }
         }
 
-        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
+        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
     }
     else
     {
@@ -284,8 +286,9 @@ void late(vec4 mvPos)
     vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
     vec2 modelXZ = modelPos.xz;
     modelXZ -= vec2(17.0, 0.0);
-    modelXZ += vec2(5.0 + 1.0, 5.0 + 1.0);
-    modelXZ /= vec2(10.0 + 2.0, 10.0 + 2.0);
+    float boundRadius = 2.0;
+    modelXZ += vec2(boundRadius + 1.0, boundRadius + 1.0);
+    modelXZ /= vec2(boundRadius * 2.0 + 2.0, boundRadius * 2.0 + 2.0);
     modelXZ *= vec2(100.0, 100.0);
     ivec2 debugMeshPos = ivec2(int(modelXZ[0]), int(modelXZ[1]));
 

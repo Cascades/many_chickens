@@ -22,6 +22,7 @@ target_link_libraries(app
 	glm::glm
 	stb::image
 	imgui
+	implot
 	meshoptimizer
 )
 

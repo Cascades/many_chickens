@@ -29,10 +29,13 @@
 #include <set>
 #include <unordered_map>
 #include <random>
+#include <numeric>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
+
+#include <implot.h>
 
 #include "app/Model.h"
 #include "app/DescriptorInfo.h"
@@ -173,6 +176,8 @@ void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> ca
     // function to create framebuffers and populate swapChainFramebuffers vector
     createFramebuffers();
 
+    createQueryPools();
+
     imgui_frame_buffers.resize(swapChainImages.size());
 
     {
@@ -228,6 +233,7 @@ void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> ca
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    ImPlot::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
 
     ImGui_ImplGlfw_InitForVulkan(window, true);
@@ -978,6 +984,7 @@ void VulkanObject::cleanupSwapChain() {
 void VulkanObject::cleanup() {
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
+    ImPlot::DestroyContext();
     ImGui::DestroyContext();
 
     // cleanup swap chain
@@ -1262,6 +1269,12 @@ void VulkanObject::createLogicalDevice() {
     vulkan12Features.shaderInt8 = true;
     vulkan12Features.samplerFilterMinmax = true;
     vulkan12Features.scalarBlockLayout = true;
+    vulkan12Features.hostQueryReset = true;
+
+    /*VkPhysicalDeviceHostQueryResetFeatures resetFeatures;
+    resetFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES;
+    resetFeatures.hostQueryReset = VK_TRUE;
+    resetFeatures.pNext = nullptr;*/
 
     VkPhysicalDeviceVulkan13Features vulkan13Features;
     vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -1281,6 +1294,7 @@ void VulkanObject::createLogicalDevice() {
     createInfo.pEnabledFeatures = &deviceFeatures;
     createInfo.pNext = &vulkan11Features;
     vulkan11Features.pNext = &vulkan12Features;
+    vulkan12Features.pNext = nullptr;//&resetFeatures;
     //vulkan12Features.pNext = &vulkan13Features;
 
     // number of extensions to enable
@@ -1310,12 +1324,31 @@ void VulkanObject::createLogicalDevice() {
 
     vkGetPhysicalDeviceProperties(physicalDevice, &output_props);
 
+    timestampPeriod = output_props.limits.timestampPeriod;
+
     std::cout << output_props.apiVersion << std::endl;
 
     // finally, get the graphics queue handle and assign it to graphicsQueue
     vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
     // and get the presentation queue handle and assign it to presentQueue
     vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
+}
+
+void VulkanObject::createQueryPools()
+{
+    VkQueryPoolCreateInfo queryPoolCreateInfo;
+    queryPoolCreateInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    queryPoolCreateInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    queryPoolCreateInfo.queryCount = 100;
+    queryPoolCreateInfo.pNext = nullptr;
+    queryPoolCreateInfo.flags = 0;
+
+    queryPools.resize(swapChainFramebuffers.size());
+
+    for (size_t queryPoolIndex = 0; queryPoolIndex < swapChainFramebuffers.size(); ++queryPoolIndex)
+    {
+        vkCreateQueryPool(device, &queryPoolCreateInfo, nullptr, &queryPools[queryPoolIndex]);
+    }
 }
 
 // create a swap chain
@@ -2733,6 +2766,8 @@ void VulkanObject::createCommandBuffers() {
 
     // for each command buffer generated
     for (size_t i = 0; i < commandBuffers.size(); i++) {
+        uint32_t queryPoolIndex = 0;
+
         auto beginLableRegion = [&](std::string_view labelName, std::span<float, 4> color)
         {
             PFN_vkCmdBeginDebugUtilsLabelEXT pfnCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT");
@@ -2777,6 +2812,8 @@ void VulkanObject::createCommandBuffers() {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
 
+        vkCmdResetQueryPool(commandBuffers[i], queryPools[i], 0, 50);
+
         std::array<VkMemoryBarrier, 1> initialDrawnLastFrameBuffer{};
         initialDrawnLastFrameBuffer[0].sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         initialDrawnLastFrameBuffer[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
@@ -2798,6 +2835,10 @@ void VulkanObject::createCommandBuffers() {
         {
             std::array<float, 4> labelCol = {1.0f, 0.2f, 0.2f, 1.0f};
             beginLableRegion("Early cull compute", labelCol);
+
+            earlyCullQueryIndices.first = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
             vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
             vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computeProgram->getLayout(), 0, 1,
                 &computeDescriptorSets[i], 0, nullptr);
@@ -2810,6 +2851,10 @@ void VulkanObject::createCommandBuffers() {
                 sizeof(cullStageConstant),
                 &cullStageConstant);
             vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
+
+            earlyCullQueryIndices.second = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
             endLableRegion();
         }
         // EARLY CULLING PASS COMPUTE SHADER END
@@ -2910,6 +2955,9 @@ void VulkanObject::createCommandBuffers() {
             renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
             renderPassInfo.pClearValues = clearValues.data();
 
+            earlyRenderQueryIndices.first = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
             vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
             vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
@@ -2930,6 +2978,10 @@ void VulkanObject::createCommandBuffers() {
             vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 
             vkCmdEndRenderPass(commandBuffers[i]);
+
+            earlyRenderQueryIndices.second = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
             endLableRegion();
         }
         // EARLY RENDER PASS END
@@ -2973,6 +3025,9 @@ void VulkanObject::createCommandBuffers() {
 
         // DEPTH PYRAMID CONSTRUCTION BEGIN
         {
+            depthPyramidQueryIndices.first = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
             std::array<float, 4> labelCol = { 0.63f, 1.0f, 0.63f, 1.0f };
             beginLableRegion("Depth pyramid construction", labelCol);
             vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, depthPyramidComputePipeline);
@@ -3100,6 +3155,10 @@ void VulkanObject::createCommandBuffers() {
                     1,
                     &reduceBarrier);
             }
+
+            depthPyramidQueryIndices.second = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
             endLableRegion();
         }
         // DEPTH PYRAMID CONSTRUCTION END
@@ -3196,6 +3255,10 @@ void VulkanObject::createCommandBuffers() {
         {
             std::array<float, 4> labelCol = { 1.0f, 0.2f, 0.2f, 1.0f };
             beginLableRegion("Late culling compute", labelCol);
+
+            lateCullQueryIndices.first = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
             vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
             vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, computeProgram->getLayout(), 0, 1,
                 &computeDescriptorSets[i], 0, nullptr);
@@ -3208,6 +3271,10 @@ void VulkanObject::createCommandBuffers() {
                 sizeof(cullStageConstant),
                 &cullStageConstant);
             vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
+
+            lateCullQueryIndices.second = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
             endLableRegion();
         }
         // LATE CULLING PASS COMPUTE SHADER END
@@ -3257,6 +3324,7 @@ void VulkanObject::createCommandBuffers() {
         {
             std::array<float, 4> labelCol = { 0.4f, 0.4f, 1.0f, 1.0f };
             beginLableRegion("Late render", labelCol);
+
             VkRenderPassBeginInfo renderPassInfo{};
             renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
             renderPassInfo.renderPass = lateGeometryPass;
@@ -3272,6 +3340,9 @@ void VulkanObject::createCommandBuffers() {
 
             renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
             renderPassInfo.pClearValues = clearValues.data();
+
+            lateRenderQueryIndices.first = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
 
             vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -3293,6 +3364,10 @@ void VulkanObject::createCommandBuffers() {
             vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 
             vkCmdEndRenderPass(commandBuffers[i]);
+
+            lateRenderQueryIndices.second = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
             endLableRegion();
         }
         // LATE RENDER PASS END
@@ -3472,6 +3547,98 @@ void VulkanObject::drawFrame() {
     ImGui::RadioButton("composed", &display_mode, 24);
     ImGui::RadioButton("composed no OC", &display_mode, 25); ImGui::SameLine();
     ImGui::Checkbox("PCF", &pcf);
+
+    std::array<uint64_t, 50> queryResults;
+
+    auto fetchRenderTimeResults = [&]()
+    {
+        //std::array<uint64_t, 50> buffer;
+
+        VkResult result = vkGetQueryPoolResults(device,
+            queryPools[imageIndex],
+            0,
+            50,
+            sizeof(uint64_t) * 50,
+            queryResults.data(),
+            sizeof(uint64_t),
+            VK_QUERY_RESULT_64_BIT);
+        if (result == VK_NOT_READY)
+        {
+            return;
+        }
+        else if (result == VK_SUCCESS)
+        {
+            //queryResults[] = buffer[1] - buffer[0];
+        }
+        else
+        {
+            throw std::runtime_error("Failed to receive query results!");
+        }
+
+        // Queries must be reset after each individual use.
+        vkResetQueryPool(device, queryPools[imageIndex], 0, 50);
+    };
+
+    ImGui::Checkbox(updatingImGuiQueryData ? "Stop updating" : "Start updating", &updatingImGuiQueryData);
+
+    if (updatingImGuiQueryData)
+    {
+        fetchRenderTimeResults();
+
+        std::rotate(earlyCullTimeHistory.begin(), earlyCullTimeHistory.begin() + 1, earlyCullTimeHistory.end());
+        earlyCullTimeHistory.back() = static_cast<float>(queryResults[earlyCullQueryIndices.second] - queryResults[earlyCullQueryIndices.first]) / timestampPeriod / 1000000.0f;
+        std::rotate(earlyRenderTimeHistory.begin(), earlyRenderTimeHistory.begin() + 1, earlyRenderTimeHistory.end());
+        earlyRenderTimeHistory.back() = static_cast<float>(queryResults[earlyRenderQueryIndices.second] - queryResults[earlyRenderQueryIndices.first]) / timestampPeriod / 1000000.0f;
+        std::rotate(depthPyramidTimeHistory.begin(), depthPyramidTimeHistory.begin() + 1, depthPyramidTimeHistory.end());
+        depthPyramidTimeHistory.back() = static_cast<float>(queryResults[depthPyramidQueryIndices.second] - queryResults[depthPyramidQueryIndices.first]) / timestampPeriod / 1000000.0f;
+        std::rotate(lateCullTimeHistory.begin(), lateCullTimeHistory.begin() + 1, lateCullTimeHistory.end());
+        lateCullTimeHistory.back() = static_cast<float>(queryResults[lateCullQueryIndices.second] - queryResults[lateCullQueryIndices.first]) / timestampPeriod / 1000000.0f;
+        std::rotate(lateRenderTimeHistory.begin(), lateRenderTimeHistory.begin() + 1, lateRenderTimeHistory.end());
+        lateRenderTimeHistory.back() = static_cast<float>(queryResults[lateRenderQueryIndices.second] - queryResults[lateRenderQueryIndices.first]) / timestampPeriod / 1000000.0f;
+    }
+
+    ImGui::Text("Early cull: %.3f ms", earlyCullTimeHistory.back());
+    ImGui::Text("Early render: %.3f ms", earlyRenderTimeHistory.back());
+    ImGui::Text("Depth pyramid: %.3f ms", depthPyramidTimeHistory.back());
+    ImGui::Text("Late cull: %.3f ms", lateCullTimeHistory.back());
+    ImGui::Text("Late render: %.3f ms", lateRenderTimeHistory.back());
+    ImGui::Text("Total measured: %.3f ms", earlyCullTimeHistory.back() +
+        earlyRenderTimeHistory.back() +
+        depthPyramidTimeHistory.back() +
+        lateCullTimeHistory.back() +
+        lateRenderTimeHistory.back());
+
+    std::array<float, queryHistorySamples> frameCountNums;
+    std::iota(frameCountNums.begin(), frameCountNums.end(), 0);
+
+    ImPlot::SetNextAxesToFit();
+    if (ImPlot::BeginPlot("Pass times"))
+    {
+        ImPlot::SetupAxes("Frame", "Time (ms)");
+        ImPlot::PushStyleVar(ImPlotStyleVar_FillAlpha, 0.50f);
+
+        std::array<float, queryHistorySamples> rollingTotals = {};
+
+        std::transform(earlyCullTimeHistory.begin(), earlyCullTimeHistory.end(), rollingTotals.begin(), rollingTotals.begin(), std::plus<float>());
+        std::transform(earlyRenderTimeHistory.begin(), earlyRenderTimeHistory.end(), rollingTotals.begin(), rollingTotals.begin(), std::plus<float>());
+        std::transform(depthPyramidTimeHistory.begin(), depthPyramidTimeHistory.end(), rollingTotals.begin(), rollingTotals.begin(), std::plus<float>());
+        std::transform(lateCullTimeHistory.begin(), lateCullTimeHistory.end(), rollingTotals.begin(), rollingTotals.begin(), std::plus<float>());
+        std::transform(lateRenderTimeHistory.begin(), lateRenderTimeHistory.end(), rollingTotals.begin(), rollingTotals.begin(), std::plus<float>());
+        
+        ImPlot::PlotShaded("Late render", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+        std::transform(rollingTotals.begin(), rollingTotals.end(), lateRenderTimeHistory.begin(), rollingTotals.begin(), std::minus<float>());
+        ImPlot::PlotShaded("Late cull", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+        std::transform(rollingTotals.begin(), rollingTotals.end(), lateCullTimeHistory.begin(), rollingTotals.begin(), std::minus<float>());
+        ImPlot::PlotShaded("Depth pyramid", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+        std::transform(rollingTotals.begin(), rollingTotals.end(), depthPyramidTimeHistory.begin(), rollingTotals.begin(), std::minus<float>());
+        ImPlot::PlotShaded("Early render", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+        std::transform(rollingTotals.begin(), rollingTotals.end(), earlyRenderTimeHistory.begin(), rollingTotals.begin(), std::minus<float>());
+        ImPlot::PlotShaded("Early cull", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+
+        ImPlot::PopStyleVar();
+
+        ImPlot::EndPlot();
+    }
 
     ImGui::Image((void*)meshesDrawnDebugViewImageViewImGUITexID, ImVec2(500, 500));
 
@@ -3708,7 +3875,7 @@ void VulkanObject::updateSSBO() {
     {
         std::random_device dev;
         std::mt19937 rng(dev());
-        std::uniform_real_distribution<float> translation_dist(-5.0f, 5.0f);
+        std::uniform_real_distribution<float> translation_dist(-2.0f, 2.0f);
         std::uniform_real_distribution<float> scale_dist(0.1f, 5.0f);
         std::uniform_real_distribution<float> rotation_dist(0.0f, 2.0f * glm::pi<float>());
 
