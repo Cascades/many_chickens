@@ -222,10 +222,10 @@ void late(vec4 mvPos)
     {
         vec2 frame_size = ubo.win_dim;
 
-        float real_width = pow(2, ceil(log2(frame_size.x)));
-	    float real_height = pow(2, ceil(log2(frame_size.y)));
+        //float real_width = pow(2, ceil(log2(frame_size.x)));
+	    //float real_height = pow(2, ceil(log2(frame_size.y)));
 
-	    vec2 real_size = vec2(max(real_width, real_height));
+	    vec2 real_size = frame_size;//vec2(max(real_width, real_height));
 
 	    vec2 scaling_factor = real_size / frame_size;
         // transform to (0, 1)
@@ -236,15 +236,18 @@ void late(vec4 mvPos)
         if (lodLookupCoord.x < 0.0 || lodLookupCoord.x > 1.0 ||
             lodLookupCoord.y < 0.0 || lodLookupCoord.y > 1.0)
         {
-            sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(1212.0);
+            //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(1212.0);
         }
         else
         {
             // Sampler is set up to do min reduction, so this computes the minimum depth of a 2x2 texel quad
-            float width = (aabb[0] - aabb[2]) * real_width;
-            float height = (aabb[1] - aabb[3]) * real_height;
+            float width = (aabb[0] - aabb[2]) * frame_size.x;
+            float height = (aabb[1] - aabb[3]) * frame_size.y;
             float level = floor(log2(max(width, height)));
-            float originalDepth = textureLod(inDepthPyramid, lodLookupCoord / scaling_factor, level).x;
+            float originalDepth = textureLod(inDepthPyramid, vec2(aabb[2], aabb[3]), level).x;
+            originalDepth = max(originalDepth, textureLod(inDepthPyramid, vec2(aabb[0], aabb[3]), level).x);
+            originalDepth = max(originalDepth, textureLod(inDepthPyramid, vec2(aabb[2], aabb[1]), level).x);
+            originalDepth = max(originalDepth, textureLod(inDepthPyramid, vec2(aabb[0], aabb[1]), level).x);
             if (originalDepth != 1234.0)
             {
                 float linearlizedDepth = linearizeDepth(originalDepth, -1.0, -250.0);
@@ -252,11 +255,11 @@ void late(vec4 mvPos)
 
                 visible = visible && depthSphere <= linearlizedDepth;
 
-                sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(depthSphere, linearlizedDepth, level, originalDepth);
+                //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(depthSphere, linearlizedDepth, level, originalDepth);
             }
         }
 
-        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
+        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
     }
     else
     {

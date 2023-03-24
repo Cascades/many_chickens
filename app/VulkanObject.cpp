@@ -960,7 +960,8 @@ void VulkanObject::cleanupSwapChain() {
     // destroy our swapchain
     vkDestroySwapchainKHR(device, swapChain, nullptr);
 
-    for (size_t i = 0; i < uniformBuffers.size(); i++) {
+    for (size_t i = 0; i < uniformBuffers.size(); i++)
+    {
         vkDestroyBuffer(device, uniformBuffers[i], nullptr);
         vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
         vkDestroyBuffer(device, indirectLodSSBO[i], nullptr);
@@ -1587,8 +1588,8 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
 
         auto mipLevels = static_cast<uint32_t>(std::log2(imageMaxSizePow2)) - 1;
         assert(mipLevels >= 1);
-        createImage(imageMaxSizePow2 / 2,
-            imageMaxSizePow2 / 2,
+        createImage(swapChainExtent.width / 2,
+            swapChainExtent.height / 2,
             VK_FORMAT_R32_SFLOAT,
             VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
@@ -3112,8 +3113,8 @@ void VulkanObject::createCommandBuffers() {
                 else
                 {
                     reduceData = {
-                        getPow2Size(swapChainExtent.width, swapChainExtent.height) / std::pow(2, depthPyramidLevel + 1),
-                        getPow2Size(swapChainExtent.width, swapChainExtent.height) / std::pow(2, depthPyramidLevel + 1) };
+                        swapChainExtent.width / std::pow(2, depthPyramidLevel + 1),
+                        swapChainExtent.height / std::pow(2, depthPyramidLevel + 1) };
                 }
 
                 vkCmdPushConstants(
@@ -3861,7 +3862,7 @@ void VulkanObject::updateSSBO() {
     {
         auto duck_0_trans = glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, -5.0f));
         auto duck_1_trans = glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, 5.0f));
-        modelScales->operator[](0) = 0.1;
+        modelScales->operator[](0) = 0.5;
         auto duck_0_scale = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](0)));
         modelScales->operator[](1) = 5.0;
         auto duck_1_scale = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](1)));

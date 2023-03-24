@@ -113,10 +113,10 @@ void main()
 	{
         vec2 frame_size = ubo.win_dim;
 
-        float real_width = pow(2, ceil(log2(frame_size.x)));
-	    float real_height = pow(2, ceil(log2(frame_size.y)));
+        //float real_width = pow(2, ceil(log2(frame_size.x)));
+	    //float real_height = pow(2, ceil(log2(frame_size.y)));
 
-	    vec2 real_size = vec2(max(real_width, real_height));
+	    vec2 real_size = frame_size;//vec2(max(real_width, real_height));
 
 	    vec2 scaling_factor = real_size / frame_size;
 
