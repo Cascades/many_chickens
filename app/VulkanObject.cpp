@@ -3643,6 +3643,167 @@ void VulkanObject::drawFrame() {
 
     ImGui::Image((void*)meshesDrawnDebugViewImageViewImGUITexID, ImVec2(500, 500));
 
+    save_path.resize(1024);
+    ImGui::InputText("Save Path", save_path.data(), save_path.size());
+    if (ImGui::Button("Save state"))
+    {
+        std::string current_save_path = save_path;
+        current_save_path.erase(std::find(current_save_path.begin(), current_save_path.end(), '\0'), current_save_path.end());
+        std::filesystem::path final_save_path = current_save_path;
+        const auto now = std::chrono::system_clock::now();
+        std::string file_name = std::format("{:%d-%m-%Y-%H-%M-%OS}_chickens_saved_{}.txt", now, chickenCount);
+        final_save_path /= std::filesystem::path{file_name};
+        std::ofstream save_file(final_save_path);
+
+        auto cam_initial_x = camera->lastX * 2.0f;
+        auto cam_initial_y = camera->lastY * 2.0f;
+        auto cam_pos = camera->Position;
+        auto cam_up = camera->Up;
+        auto cam_yaw = camera->Yaw;
+        auto cam_pitch = camera->Pitch;
+
+        save_file << cam_initial_x << std::endl;
+        save_file << cam_initial_y << std::endl;
+        save_file << cam_pos.x << std::endl;
+        save_file << cam_pos.y << std::endl;
+        save_file << cam_pos.z << std::endl;
+        save_file << cam_up.x << std::endl;
+        save_file << cam_up.y << std::endl;
+        save_file << cam_up.z << std::endl;
+        save_file << cam_yaw << std::endl;
+        save_file << cam_pitch << std::endl;
+
+        for (size_t idx = 0; idx < modelTransforms->modelMatricies.size(); ++idx)
+        {
+            auto mod_mat = modelTransforms->modelMatricies[idx];
+            save_file << mod_mat[0][0] << std::endl;
+            save_file << mod_mat[0][1] << std::endl;
+            save_file << mod_mat[0][2] << std::endl;
+            save_file << mod_mat[0][3] << std::endl;
+            save_file << mod_mat[1][0] << std::endl;
+            save_file << mod_mat[1][1] << std::endl;
+            save_file << mod_mat[1][2] << std::endl;
+            save_file << mod_mat[1][3] << std::endl;
+            save_file << mod_mat[2][0] << std::endl;
+            save_file << mod_mat[2][1] << std::endl;
+            save_file << mod_mat[2][2] << std::endl;
+            save_file << mod_mat[2][3] << std::endl;
+            save_file << mod_mat[3][0] << std::endl;
+            save_file << mod_mat[3][1] << std::endl;
+            save_file << mod_mat[3][2] << std::endl;
+            save_file << mod_mat[3][3] << std::endl;
+            auto mod_scale = modelScales->operator[](idx);
+            save_file << mod_scale << std::endl;
+        }
+
+        save_file.close();
+    }
+
+    if (ImGui::Button("Load state"))
+    {
+        std::string current_save_path = save_path;
+        current_save_path.erase(std::find(current_save_path.begin(), current_save_path.end(), '\0'), current_save_path.end());
+
+        std::ifstream open_file(current_save_path);
+
+        std::string line;
+
+        std::getline(open_file, line);
+        auto cam_initial_x = std::stof(line);
+        std::getline(open_file, line);
+        auto cam_initial_y = std::stof(line);
+        glm::vec3 cam_pos{};
+        std::getline(open_file, line);
+        cam_pos.x = std::stof(line);
+        std::getline(open_file, line);
+        cam_pos.y = std::stof(line);
+        std::getline(open_file, line);
+        cam_pos.z = std::stof(line);
+        glm::vec3 cam_up{};
+        std::getline(open_file, line);
+        cam_up.x = std::stof(line);
+        std::getline(open_file, line);
+        cam_up.y = std::stof(line);
+        std::getline(open_file, line);
+        cam_up.z = std::stof(line);
+        std::getline(open_file, line);
+        auto cam_yaw = std::stof(line);
+        std::getline(open_file, line);
+        auto cam_pitch = std::stof(line);
+
+        camera = std::make_shared<mc::Camera>(cam_initial_x, cam_initial_y, cam_pos, cam_up, cam_yaw, cam_pitch);
+
+        size_t idx = 0;
+        for (std::string line; getline(open_file, line); )
+        {
+            glm::mat4 mod_mat{};
+            mod_mat[0][0] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[0][1] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[0][2] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[0][3] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[1][0] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[1][1] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[1][2] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[1][3] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[2][0] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[2][1] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[2][2] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[2][3] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[3][0] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[3][1] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[3][2] = std::stof(line);
+            getline(open_file, line);
+            mod_mat[3][3] = std::stof(line);
+
+            modelTransforms->modelMatricies[idx] = mod_mat;
+
+            getline(open_file, line);
+            float mod_scale = std::stof(line);
+
+            modelScales->operator[](idx) = mod_scale;
+
+            ++idx;
+        }
+
+        open_file.close();
+
+        void* data;
+        vkMapMemory(device, SSBOMemory, 0, sizeof(ModelTransforms), 0, &data);
+        memcpy(data, modelTransforms.get(), sizeof(ModelTransforms));
+        vkUnmapMemory(device, SSBOMemory);
+
+        data = nullptr;
+        vkMapMemory(device, scaleSSBOMemory, 0, modelScales->size() * sizeof(float), 0, &data);
+        memcpy(data, modelScales.get(), modelScales->size() * sizeof(float));
+        vkUnmapMemory(device, scaleSSBOMemory);
+
+        std::cout << "Updating drawnLastFrameBuffer" << std::endl;
+        drawnLastFrameSSBO.resize(swapChainImages.size());
+        drawnLastFrameSSBOMemory.resize(swapChainImages.size());
+
+        auto zerodVisibility = std::make_unique<std::array<vk::Bool32, chickenCount>>();
+        zerodVisibility->fill(false);
+
+        data = nullptr;
+        vkMapMemory(device, drawnLastFrameSSBOMemory[0], 0, chickenCount * sizeof(vk::Bool32), 0, &data);
+        memcpy(data, zerodVisibility.get(), chickenCount * sizeof(vk::Bool32));
+        vkUnmapMemory(device, drawnLastFrameSSBOMemory[0]);
+    }
+
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::End();
 

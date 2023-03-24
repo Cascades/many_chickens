@@ -279,6 +279,7 @@ private:
     int display_mode = 0;
     float shadow_bias = 0.0;
     bool pcf = false;
+    std::string save_path;
 
     void createImguiPass();
     void createGeometryPass(bool clearAttachmentsOnLoad, VkRenderPass& renderPass);

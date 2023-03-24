@@ -15,18 +15,18 @@ int main() {
 
     std::unique_ptr<VulkanObject> vulkan_object = std::make_unique<VulkanObject>();
 
-    auto camera = std::make_shared<mc::Camera>(1920, 1080);
+    vulkan_object->camera = std::make_shared<mc::Camera>(1920, 1080);
 
     // create vulkan instance
-    vulkan_object->initVulkan(glfw_object.window, camera);
+    vulkan_object->initVulkan(glfw_object.window, vulkan_object->camera);
     glfwSetWindowUserPointer(glfw_object.window, vulkan_object.get());
 
     try {
         // while the window is not closed by the user
         while (!glfwWindowShouldClose(glfw_object.window)) {
 
-            camera->update_delta_time();
-            camera->process_input(glfw_object.window);
+            vulkan_object->camera->update_delta_time();
+            vulkan_object->camera->process_input(glfw_object.window);
 
             // poll for user inputs
             glfwPollEvents();
