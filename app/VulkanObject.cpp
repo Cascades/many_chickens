@@ -14,6 +14,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtx/string_cast.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
 
 //includes C++ headers
 #include <iostream>
@@ -377,11 +378,11 @@ void VulkanObject::createTextureSampler() {
     createNearestMinDepthInfo.minLod = 0;
     createNearestMinDepthInfo.maxLod = 16.f;
 
-    createInfoReduction = { VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO_EXT };
+    //createInfoReduction = { VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO_EXT };
 
-    createInfoReduction.reductionMode = VK_SAMPLER_REDUCTION_MODE_MIN;
+    //createInfoReduction.reductionMode = VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE;
 
-    createNearestMinDepthInfo.pNext = &createInfoReduction;
+    createNearestMinDepthInfo.pNext = nullptr;//&createInfoReduction;
 
     if (vkCreateSampler(device, &createNearestMinDepthInfo, 0, &depthNearestMinSampler) != VK_SUCCESS)
     {
@@ -3498,7 +3499,7 @@ void VulkanObject::drawFrame() {
         max_dists[3] = 5.5f;
         max_dists[4] = 50.0f;
     }
-    ImGui::SliderFloat("LOD level 0 max dist", &max_dists[0], 0.00f, max_dists[1]);
+    ImGui::SliderFloat("LOD level 0 max dist", &max_dists[0], 0.00f, 10000.0f);// max_dists[1]);
     ImGui::SliderFloat("LOD level 1 max dist", &max_dists[1], max_dists[0], max_dists[2]);
     ImGui::SliderFloat("LOD level 2 max dist", &max_dists[2], max_dists[1], max_dists[3]);
     ImGui::SliderFloat("LOD level 3 max dist", &max_dists[3], max_dists[2], max_dists[4]);
@@ -3804,6 +3805,26 @@ void VulkanObject::drawFrame() {
         vkUnmapMemory(device, drawnLastFrameSSBOMemory[0]);
     }
 
+    std::string camera_pos = std::format("Camera pos: ({}, {}, {})", camera->Position.x, camera->Position.y, camera->Position.z);
+    ImGui::Text(camera_pos.c_str());
+    std::string camera_front = std::format("Camera fro: ({}, {}, {})", camera->Front.x, camera->Front.y, camera->Front.z);
+    ImGui::Text(camera_front.c_str());
+    std::string camera_rot = std::format("Camera rot: ({}, {})", camera->Pitch, camera->Yaw);
+    ImGui::Text(camera_rot.c_str());
+
+    glm::mat4 transformation = modelTransforms->modelMatricies[0]; // your transformation matrix.
+    glm::vec3 scale;
+    glm::quat rotation;
+    glm::vec3 translation;
+    glm::vec3 skew;
+    glm::vec4 perspective;
+    glm::decompose(transformation, scale, rotation, translation, skew, perspective);
+
+    std::string cube_pos = std::format("Cube pos: ({}, {}, {})", translation.x, translation.y, translation.z);
+    ImGui::Text(cube_pos.c_str());
+    std::string cube_rot = std::format("Cube rot: ({}, {}, {})", rotation.x, rotation.y, rotation.z);
+    ImGui::Text(cube_rot.c_str());
+
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::End();
 
@@ -4019,6 +4040,9 @@ void VulkanObject::updateSSBO() {
     modelTransforms = std::make_unique<ModelTransforms>();
     modelScales = std::make_unique<decltype(modelScales)::element_type>();
 
+    //modelTransforms->modelMatricies[0] = glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, 0.0f));
+    //modelScales->operator[](0) = 1.0f;
+
     if constexpr (chickenCount == 2)
     {
         auto duck_0_trans = glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, -5.0f));
@@ -4037,7 +4061,7 @@ void VulkanObject::updateSSBO() {
     {
         std::random_device dev;
         std::mt19937 rng(dev());
-        std::uniform_real_distribution<float> translation_dist(-2.0f, 2.0f);
+        std::uniform_real_distribution<float> translation_dist(-5.0f, 5.0f);
         std::uniform_real_distribution<float> scale_dist(0.1f, 5.0f);
         std::uniform_real_distribution<float> rotation_dist(0.0f, 2.0f * glm::pi<float>());
 

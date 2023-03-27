@@ -217,6 +217,8 @@ void late(vec4 mvPos)
 
     visible = visible && potentiallyInFrustum(mvPos.xyz, radius, 1.0, 250.0);
 
+    float level = 0;
+
     vec4 aabb;
     if (visible && getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.proj, aabb))
     {
@@ -243,23 +245,24 @@ void late(vec4 mvPos)
             // Sampler is set up to do min reduction, so this computes the minimum depth of a 2x2 texel quad
             float width = (aabb[0] - aabb[2]) * frame_size.x;
             float height = (aabb[1] - aabb[3]) * frame_size.y;
-            float level = floor(log2(max(width, height)));
+            level = floor(log2(max(width, height)));
             float originalDepth = textureLod(inDepthPyramid, vec2(aabb[2], aabb[3]), level).x;
             originalDepth = max(originalDepth, textureLod(inDepthPyramid, vec2(aabb[0], aabb[3]), level).x);
             originalDepth = max(originalDepth, textureLod(inDepthPyramid, vec2(aabb[2], aabb[1]), level).x);
             originalDepth = max(originalDepth, textureLod(inDepthPyramid, vec2(aabb[0], aabb[1]), level).x);
+            originalDepth = max(originalDepth, textureLod(inDepthPyramid, (vec2(aabb[0], aabb[1]) + vec2(aabb[2], aabb[3])) * 0.5, level).x);
             if (originalDepth != 1234.0)
             {
-                float linearlizedDepth = linearizeDepth(originalDepth, -1.0, -250.0);
-                float depthSphere = -1 * (mvPos.z - radius - ubo.zNear) + 3.0;
+                float linearlizedDepth = linearizeDepth(originalDepth, -1.0, -250.0) - ubo.zNear;
+                float depthSphere = (-mvPos.z - (radius * 1.5) - ubo.zNear);
 
                 visible = visible && depthSphere <= linearlizedDepth;
 
-                //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(depthSphere, linearlizedDepth, level, originalDepth);
+                sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = vec4(depthSphere, linearlizedDepth, radius, ubo.zNear);
             }
         }
 
-        sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
+        //sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = aabb;
     }
     else
     {
@@ -289,7 +292,7 @@ void late(vec4 mvPos)
     vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
     vec2 modelXZ = modelPos.xz;
     modelXZ -= vec2(17.0, 0.0);
-    float boundRadius = 2.0;
+    float boundRadius = 5.0;
     modelXZ += vec2(boundRadius + 1.0, boundRadius + 1.0);
     modelXZ /= vec2(boundRadius * 2.0 + 2.0, boundRadius * 2.0 + 2.0);
     modelXZ *= vec2(100.0, 100.0);
@@ -305,12 +308,33 @@ void late(vec4 mvPos)
         }
         else
         {
-            imageStore(meshesDrawnDebugView, debugMeshPos, vec4(1.0, 0.0, 0.0, 1.0));
+            vec4 abc[10] = vec4[](vec4(0.0, 0.0, 1.0, 1.0),
+                                  vec4(0.0, 1.0, 0.0, 1.0),
+                                  vec4(0.0, 1.0, 1.0, 1.0),
+                                  vec4(1.0, 0.0, 0.0, 1.0),
+                                  vec4(1.0, 0.0, 1.0, 1.0),
+                                  vec4(1.0, 1.0, 0.0, 1.0),
+                                  vec4(1.0, 1.0, 1.0, 1.0),
+                                  vec4(220.0 / 255.0, 20.0 / 255.0, 60.0 / 255.0, 1.0),
+                                  vec4(255.0 / 255.0, 165.0 / 255.0, 0.0 / 255.0, 1.0),
+                                  vec4(255.0 / 255.0, 192.0 / 255.0, 203.0 / 255.0, 1.0));
+            imageStore(meshesDrawnDebugView, debugMeshPos, abc[uint(level)]);
         }
     }
     else
     {
         drawnLastFrameBuffer.data[gl_GlobalInvocationID.x] = false;
+        //vec4 abc[10] = vec4[](vec4(0.0, 0.0, 1.0, 1.0),
+        //                      vec4(0.0, 1.0, 0.0, 1.0),
+        //                      vec4(0.0, 1.0, 1.0, 1.0),
+        //                      vec4(1.0, 0.0, 0.0, 1.0),
+        //                      vec4(1.0, 0.0, 1.0, 1.0),
+        //                      vec4(1.0, 1.0, 0.0, 1.0),
+        //                      vec4(1.0, 1.0, 1.0, 1.0),
+        //                      vec4(220.0 / 255.0, 20.0 / 255.0, 60.0 / 255.0, 1.0),
+        //                      vec4(255.0 / 255.0, 165.0 / 255.0, 0.0 / 255.0, 1.0),
+        //                      vec4(255.0 / 255.0, 192.0 / 255.0, 203.0 / 255.0, 1.0));
+        //imageStore(meshesDrawnDebugView, debugMeshPos, abc[uint(level)]);
     }
 }
 

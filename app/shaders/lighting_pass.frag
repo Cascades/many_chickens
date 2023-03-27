@@ -79,6 +79,20 @@ float insideBox(vec2 v, vec2 bottomLeft, vec2 topRight) {
     return s.x * s.y;
 }
 
+//https://www.shadertoy.com/view/wdK3Dy
+float grid(vec2 fragCoord, float space, float gridWidth)
+{
+    vec2 p  = fragCoord - vec2(.5);
+    vec2 size = vec2(gridWidth);
+    
+    vec2 a1 = mod(p - size, space);
+    vec2 a2 = mod(p + size, space);
+    vec2 a = a2 - a1;
+       
+    float g = min(a.x, a.y);
+    return clamp(g, 0., 1.0);
+}
+
 void main()
 {
     vec4 tmpOutFragColor;
@@ -121,11 +135,58 @@ void main()
 	    vec2 scaling_factor = real_size / frame_size;
 
         float depth_val = linearizeDepth(textureLod(inDepthPyramid, inUV / scaling_factor, ubo.display_mode - 7).r, -1.0, -250.0) / 250.0;
-		outFragcolor = vec4(depth_val, depth_val, depth_val, 1.0);
+
+        vec3 final_col = vec3(depth_val, depth_val, depth_val);
+
         if(textureLod(inDepthPyramid, inUV / scaling_factor, ubo.display_mode - 7).r == 1.0)
         {
-            outFragcolor = vec4(1.0, 0.0, 0.0, 1.0);
+            final_col = vec3(1.0, 0.0, 0.0);
         }
+
+        float isGridLine = 1.0 - clamp(grid(inUV * ubo.win_dim, pow(2, ubo.display_mode - 6), 0.5), 0.0, 1.0);
+        float isUpperGridLine = 1.0 - clamp(grid(inUV * ubo.win_dim, pow(2, ubo.display_mode - 5), 1.0), 0.0, 1.0);
+
+        final_col = mix(final_col, vec3(0.5, 0.5, 0.0), isGridLine);
+        final_col = mix(final_col, vec3(0.5, 0.5, 0.0), isUpperGridLine); 
+
+        vec2 clipSpace = inUV;
+
+        float currentExtraBVal = 0.0f;
+
+        uint i = 12;
+        vec4 aabb_ = sphereProjectionDebugBuffer.data[i].projectedAABB;
+        vec4 aabb = abs(aabb_);
+        bool inBox = clipSpace.x < aabb[0] &&
+                        clipSpace.x > aabb[2] &&
+                        clipSpace.y < aabb[1] &&
+                        clipSpace.y > aabb[3];
+        bool tooFarInBox = clipSpace.x < aabb[0] - 0.002 &&
+                            clipSpace.x > aabb[2] + 0.002 &&
+                            clipSpace.y < aabb[1] - 0.002 &&
+                            clipSpace.y > aabb[3] + 0.002;
+        
+        vec4 abc[10] = vec4[](vec4(0.0, 0.0, 1.0, 1.0), //0
+                              vec4(0.0, 1.0, 0.0, 1.0), //1
+                              vec4(0.0, 1.0, 1.0, 1.0), //2
+                              vec4(1.0, 0.0, 0.0, 1.0), //3
+                              vec4(1.0, 0.0, 1.0, 1.0), //4
+                              vec4(1.0, 1.0, 0.0, 1.0), //5
+                              vec4(1.0, 1.0, 1.0, 1.0), //6
+                              vec4(220.0 / 255.0, 20.0 / 255.0, 60.0 / 255.0, 1.0), //7
+                              vec4(255.0 / 255.0, 165.0 / 255.0, 0.0 / 255.0, 1.0), //8
+                              vec4(255.0 / 255.0, 192.0 / 255.0, 203.0 / 255.0, 1.0)); //9
+
+        if(inBox && !tooFarInBox)
+        {
+            float width = (aabb[0] - aabb[2]) * frame_size.x;
+            float height = (aabb[1] - aabb[3]) * frame_size.y;
+            float OCLevel = floor(log2(max(width, height)));
+            outFragcolor = abc[uint(OCLevel)];
+        }
+        else
+        {
+            outFragcolor = vec4(final_col, 1.0);
+        }        
 	}
 	else
 	{

@@ -10,7 +10,7 @@
 
 int main() {
     // function used to create a window with GLFW
-    GLFWObject glfw_object(1920, 1080);
+    GLFWObject glfw_object(1024, 1024);
     glfw_object.init();
 
     std::unique_ptr<VulkanObject> vulkan_object = std::make_unique<VulkanObject>();
