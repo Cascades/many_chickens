@@ -34,6 +34,23 @@ layout(std140, binding = 2) readonly buffer ModelTranformsBuffer
 	mat4 data[];
 } modelTranformsBuffer;
 
+struct VkDrawIndexedIndirectCommand
+{
+	uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+    uint meshId;
+    uint pad1;
+    uint pad2;
+};
+
+layout(std430, binding = 4) readonly buffer IndirectBuffer
+{
+	VkDrawIndexedIndirectCommand data[];
+} indirectBuffer;
+
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inColor;
 layout(location = 2) in vec2 inTexCoord;
@@ -65,11 +82,11 @@ void main() {
 
     if (ubo.display_mode == 22)
     {
-        gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[gl_DrawIDARB] * vec4(normalize(inPosition) * 0.351285, 1.0);
+        gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[indirectBuffer.data[gl_DrawIDARB].meshId] * vec4(normalize(inPosition) * 0.351285, 1.0);
     }
     else
     {
-        gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[gl_DrawIDARB] * vec4(inPosition, 1.0);
+        gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[indirectBuffer.data[gl_DrawIDARB].meshId] * vec4(inPosition, 1.0);
     }
 
     outNormal = inNormal;

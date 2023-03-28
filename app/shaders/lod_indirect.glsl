@@ -18,7 +18,7 @@ struct VkDrawIndexedIndirectCommand
     uint firstIndex;
     int vertexOffset;
     uint firstInstance;
-    uint pad0;
+    uint meshId;
     uint pad1;
     uint pad2;
 };
@@ -86,12 +86,17 @@ struct SphereProjectionDebugData
     //vec4 depthData;
 };
 
-layout(std430, binding = 7) buffer SphereProjectionDebugBuffer
+layout(set = 0, binding = 7, rgba32f) uniform writeonly image2D meshesDrawnDebugView;
+
+layout(std430, binding = 8) buffer SphereProjectionDebugBuffer
 {
 	SphereProjectionDebugData data[];
 } sphereProjectionDebugBuffer;
 
-layout(binding = 8, rgba32f) uniform writeonly image2D meshesDrawnDebugView;
+layout(std430, binding = 9) buffer IndirectBufferCountBuffer
+{
+	uint data;
+} indirectBufferCountBuffer;
 
 vec3 project(mat4 P, vec3 Q)
 {
@@ -191,21 +196,25 @@ void early(vec4 mvPos)
 
     if (!drawnLastFrameBuffer.data[gl_GlobalInvocationID.x] || !potentiallyInFrustum(mvPos.xyz, radius, 1.0, 250.0))
     {
-        indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].vertexOffset = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
+        //indirectBuffer.data[drawBufferIdx].indexCount = 0;
+        //indirectBuffer.data[drawBufferIdx].instanceCount = 0;
+        //indirectBuffer.data[drawBufferIdx].firstIndex = 0;
+        //indirectBuffer.data[drawBufferIdx].vertexOffset = 0;
+        //indirectBuffer.data[drawBufferIdx].firstInstance = 0;
+        //indirectBuffer.data[drawBufferIdx].meshId = gl_GlobalInvocationID.x;
 		return;
     }
 
     uvec2 meshResults = meshLODCalculation(mvPos);
 
-    indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = meshResults[0];
-    indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = 1;
-    indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = meshResults[1];
-    indirectBuffer.data[gl_GlobalInvocationID.x].vertexOffset = 0;
-    indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
+    uint drawBufferIdx = atomicAdd(indirectBufferCountBuffer.data, 1);
+
+    indirectBuffer.data[drawBufferIdx].indexCount = meshResults[0];
+    indirectBuffer.data[drawBufferIdx].instanceCount = 1;
+    indirectBuffer.data[drawBufferIdx].firstIndex = meshResults[1];
+    indirectBuffer.data[drawBufferIdx].vertexOffset = 0;
+    indirectBuffer.data[drawBufferIdx].firstInstance = 0;
+    indirectBuffer.data[drawBufferIdx].meshId = gl_GlobalInvocationID.x;
 }
 
 void late(vec4 mvPos)
@@ -272,21 +281,25 @@ void late(vec4 mvPos)
 
     if ((!visible) || drawnLastFrameBuffer.data[gl_GlobalInvocationID.x])
     {
-        indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].vertexOffset = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
+        //indirectBuffer.data[drawBufferIdx].indexCount = 0;
+        //indirectBuffer.data[drawBufferIdx].instanceCount = 0;
+        //indirectBuffer.data[drawBufferIdx].firstIndex = 0;
+        //indirectBuffer.data[drawBufferIdx].vertexOffset = 0;
+        //indirectBuffer.data[drawBufferIdx].firstInstance = 0;
+        //indirectBuffer.data[drawBufferIdx].meshId = gl_GlobalInvocationID.x;
     }
     else
     {
         uvec2 meshResults = meshLODCalculation(mvPos);
 
-        indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = mix(0, meshResults[0], visible);
-        indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = mix(0, 1, visible);
-        indirectBuffer.data[gl_GlobalInvocationID.x].firstIndex = mix(0, meshResults[1], visible);
-        indirectBuffer.data[gl_GlobalInvocationID.x].vertexOffset = 0;
-        indirectBuffer.data[gl_GlobalInvocationID.x].firstInstance = 0;
+        uint drawBufferIdx = atomicAdd(indirectBufferCountBuffer.data, 1);
+
+        indirectBuffer.data[drawBufferIdx].indexCount = mix(0, meshResults[0], visible);
+        indirectBuffer.data[drawBufferIdx].instanceCount = mix(0, 1, visible);
+        indirectBuffer.data[drawBufferIdx].firstIndex = mix(0, meshResults[1], visible);
+        indirectBuffer.data[drawBufferIdx].vertexOffset = 0;
+        indirectBuffer.data[drawBufferIdx].firstInstance = 0;
+        indirectBuffer.data[drawBufferIdx].meshId = gl_GlobalInvocationID.x;
     }
 
     vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);

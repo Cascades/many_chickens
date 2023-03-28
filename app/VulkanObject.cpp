@@ -653,6 +653,18 @@ void VulkanObject::createSSBOs() {
             indirectLodSSBOMemory[i]);
     }
 
+    indirectLodCountSSBO.resize(swapChainImages.size());
+    indirectLodCountSSBOMemory.resize(swapChainImages.size());
+
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        createBuffer(
+            sizeof(uint32_t),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            indirectLodCountSSBO[i],
+            indirectLodCountSSBOMemory[i]);
+    }
+
     bufferSize = dragon_model.getTotalLodLevels() * sizeof(LodConfigData);
 
     lodConfigSSBO.resize(swapChainImages.size());
@@ -967,6 +979,8 @@ void VulkanObject::cleanupSwapChain() {
         vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
         vkDestroyBuffer(device, indirectLodSSBO[i], nullptr);
         vkFreeMemory(device, indirectLodSSBOMemory[i], nullptr);
+        vkDestroyBuffer(device, indirectLodCountSSBO[i], nullptr);
+        vkFreeMemory(device, indirectLodCountSSBOMemory[i], nullptr);
         vkDestroyBuffer(device, lodConfigSSBO[i], nullptr);
         vkFreeMemory(device, lodConfigSSBOMemory[i], nullptr);
         vkDestroyBuffer(device, drawnLastFrameSSBO[0], nullptr);
@@ -2026,6 +2040,11 @@ void VulkanObject::createDescriptorSets() {
             0,
             modelTransforms->modelMatricies.size() * 32};
 
+        mc::DescriptorInfo<VkDescriptorBufferInfo> indirectSsboCountInfo{
+            indirectLodCountSSBO[i],
+            0,
+            sizeof(uint32_t)};
+
         mc::DescriptorInfo<VkDescriptorBufferInfo> lodConfigSsboInfo{
             lodConfigSSBO[i],
             0,
@@ -2096,7 +2115,7 @@ void VulkanObject::createDescriptorSets() {
             depthPyramidMultiMipView,
             VK_IMAGE_LAYOUT_GENERAL };
 
-        std::array<VkWriteDescriptorSet, 9> computeDescriptorWrites{};
+        std::array<VkWriteDescriptorSet, 10> computeDescriptorWrites{};
 
         computeDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         computeDescriptorWrites[0].dstSet = computeDescriptorSets[i];
@@ -2158,17 +2177,25 @@ void VulkanObject::createDescriptorSets() {
         computeDescriptorWrites[7].dstSet = computeDescriptorSets[i];
         computeDescriptorWrites[7].dstBinding = 7;
         computeDescriptorWrites[7].dstArrayElement = 0;
-        computeDescriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        computeDescriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         computeDescriptorWrites[7].descriptorCount = 1;
-        computeDescriptorWrites[7].pBufferInfo = sphereProjectionDebugSsboInfo.getPtr();
+        computeDescriptorWrites[7].pImageInfo = meshesDrawnDebugViewDescriptorInfo.getPtr();
 
         computeDescriptorWrites[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         computeDescriptorWrites[8].dstSet = computeDescriptorSets[i];
         computeDescriptorWrites[8].dstBinding = 8;
         computeDescriptorWrites[8].dstArrayElement = 0;
-        computeDescriptorWrites[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        computeDescriptorWrites[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         computeDescriptorWrites[8].descriptorCount = 1;
-        computeDescriptorWrites[8].pImageInfo = meshesDrawnDebugViewDescriptorInfo.getPtr();
+        computeDescriptorWrites[8].pBufferInfo = sphereProjectionDebugSsboInfo.getPtr();
+
+        computeDescriptorWrites[9].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        computeDescriptorWrites[9].dstSet = computeDescriptorSets[i];
+        computeDescriptorWrites[9].dstBinding = 9;
+        computeDescriptorWrites[9].dstArrayElement = 0;
+        computeDescriptorWrites[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        computeDescriptorWrites[9].descriptorCount = 1;
+        computeDescriptorWrites[9].pBufferInfo = indirectSsboCountInfo.getPtr();
 
         vkUpdateDescriptorSets(
             device,
@@ -2177,7 +2204,7 @@ void VulkanObject::createDescriptorSets() {
             0,
             nullptr);
 
-        std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
+        std::array<VkWriteDescriptorSet, 5> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = descriptorSets[i];
@@ -2210,6 +2237,14 @@ void VulkanObject::createDescriptorSets() {
         descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         descriptorWrites[3].descriptorCount = 1;
         descriptorWrites[3].pBufferInfo = sphereProjectionDebugSsboInfo.getPtr();
+
+        descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[4].dstSet = descriptorSets[i];
+        descriptorWrites[4].dstBinding = 4;
+        descriptorWrites[4].dstArrayElement = 0;
+        descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[4].descriptorCount = 1;
+        descriptorWrites[4].pBufferInfo = indirectSsboInfo.getPtr();
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
@@ -2852,6 +2887,9 @@ void VulkanObject::createCommandBuffers() {
                 0,
                 sizeof(cullStageConstant),
                 &cullStageConstant);
+
+            vkCmdFillBuffer(commandBuffers[i], indirectLodCountSSBO[i], 0, sizeof(uint32_t), 0);
+
             vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
 
             earlyCullQueryIndices.second = queryPoolIndex;
@@ -2923,12 +2961,12 @@ void VulkanObject::createCommandBuffers() {
         std::array<VkMemoryBarrier, 1> renderPassMemoryOutputFormatConversions{};
         renderPassMemoryOutputFormatConversions[0].sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         renderPassMemoryOutputFormatConversions[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-        renderPassMemoryOutputFormatConversions[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        renderPassMemoryOutputFormatConversions[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
 
         vkCmdPipelineBarrier(
             commandBuffers[i],
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
             VK_DEPENDENCY_BY_REGION_BIT,
             renderPassMemoryOutputFormatConversions.size(),
             renderPassMemoryOutputFormatConversions.data(),
@@ -2969,7 +3007,7 @@ void VulkanObject::createCommandBuffers() {
 
             vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, geometryProgram->getLayout(), 0, 1, &descriptorSets[i], 0, nullptr);
 
-            vkCmdDrawIndexedIndirect(commandBuffers[i], indirectLodSSBO[i], 0, modelTransforms->modelMatricies.size(), 32);
+            vkCmdDrawIndexedIndirectCount(commandBuffers[i], indirectLodSSBO[i], 0, indirectLodCountSSBO[i], 0, modelTransforms->modelMatricies.size(), 32);
 
             vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
 
@@ -3272,6 +3310,9 @@ void VulkanObject::createCommandBuffers() {
                 0,
                 sizeof(cullStageConstant),
                 &cullStageConstant);
+
+            vkCmdFillBuffer(commandBuffers[i], indirectLodCountSSBO[i], 0, sizeof(uint32_t), 0);
+
             vkCmdDispatch(commandBuffers[i], modelTransforms->modelMatricies.size(), 1, 1);
 
             lateCullQueryIndices.second = queryPoolIndex;
@@ -3307,13 +3348,13 @@ void VulkanObject::createCommandBuffers() {
         std::array<VkMemoryBarrier, 1> lateRenderPassMemoryBarriers{};
         lateRenderPassMemoryBarriers[0].sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         lateRenderPassMemoryBarriers[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-        lateRenderPassMemoryBarriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+        lateRenderPassMemoryBarriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
 
         // Barrier between compute and vertex shading.
         vkCmdPipelineBarrier(
             commandBuffers[i],
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
             VK_DEPENDENCY_BY_REGION_BIT,
             lateRenderPassMemoryBarriers.size(),
             lateRenderPassMemoryBarriers.data(),
@@ -3355,7 +3396,7 @@ void VulkanObject::createCommandBuffers() {
 
             vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, geometryProgram->getLayout(), 0, 1, &descriptorSets[i], 0, nullptr);
 
-            vkCmdDrawIndexedIndirect(commandBuffers[i], indirectLodSSBO[i], 0, modelTransforms->modelMatricies.size(), 32);
+            vkCmdDrawIndexedIndirectCount(commandBuffers[i], indirectLodSSBO[i], 0, indirectLodCountSSBO[i], 0, modelTransforms->modelMatricies.size(), 32);
 
             vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
 

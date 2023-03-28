@@ -182,6 +182,8 @@ private:
     VkDeviceMemory scaleSSBOMemory;
     std::vector<VkBuffer> indirectLodSSBO;
     std::vector<VkDeviceMemory> indirectLodSSBOMemory;
+    std::vector<VkBuffer> indirectLodCountSSBO;
+    std::vector<VkDeviceMemory> indirectLodCountSSBOMemory;
     std::vector<VkBuffer> lodConfigSSBO;
     std::vector<VkDeviceMemory> lodConfigSSBOMemory;
     std::vector<VkBuffer> drawnLastFrameSSBO;
