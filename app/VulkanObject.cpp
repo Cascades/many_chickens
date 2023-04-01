@@ -3685,6 +3685,8 @@ void VulkanObject::drawFrame() {
 
     ImGui::Image((void*)meshesDrawnDebugViewImageViewImGUITexID, ImVec2(500, 500));
 
+    ImGui::Checkbox("Updating pod", &updating_pos);
+
     save_path.resize(1024);
     ImGui::InputText("Save Path", save_path.data(), save_path.size());
     if (ImGui::Button("Save state"))
@@ -4010,7 +4012,6 @@ void VulkanObject::drawFrame() {
 }
 
 void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
-    UniformBufferObject ubo{};
     glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0), glm::vec3(x_offset, y_offset, z_offset));
     glm::mat4 scale_matrix = glm::scale(glm::mat4(1.0), glm::vec3(scale));
     glm::mat4 rotation_matrix = glm::rotate(x_rotation, glm::vec3(1.0, 0.0, 0.0));
@@ -4022,13 +4023,28 @@ void VulkanObject::updateUniformBuffer(uint32_t currentImage) {
     camera_rotation_matrix *= glm::rotate(camera_z_rotation, glm::vec3(0.0, 0.0, 1.0));
 
     ubo.model = translation_matrix * rotation_matrix * scale_matrix;
-    //ubo.view = glm::lookAt(glm::vec3(camera_rotation_matrix * glm::vec4(-2.0f, 0.0f, 0.0f, 1.0f)), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.view = camera->GetViewMatrix();
     ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 1.0f, 250.0f);
     ubo.proj[1][1] *= -1;
 
     ubo.p00 = ubo.proj[0][0];
     ubo.p11 = ubo.proj[1][1];
+
+    if (updating_pos)
+    {
+        ubo.culling_model = ubo.model;
+        ubo.culling_view = ubo.view;
+        ubo.culling_proj = ubo.proj;
+
+        ubo.culling_p00 = ubo.p00;
+        ubo.culling_p11 = ubo.p11;
+        ubo.culling_updating = 1;
+    }
+    else
+    {
+        ubo.culling_updating = 0;
+    }
+
     ubo.zNear = 1.0f;
 
     ubo.light = glm::rotate(x_light_rotation, glm::vec3(1.0, 0.0, 0.0));

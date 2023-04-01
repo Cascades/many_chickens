@@ -32,6 +32,9 @@ layout(std140, binding = 2) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 proj;
+    mat4 culling_model;
+    mat4 culling_view;
+    mat4 culling_proj;
     mat4 light;
     mat4 lightVP;
 	vec4 Ka;
@@ -51,8 +54,11 @@ layout(std140, binding = 2) uniform UniformBufferObject {
     float shadow_bias;
     float p00;
 	float p11;
+    float culling_p00;
+	float culling_p11;
 	float zNear;
 	int display_mode;
+    int culling_updating;
 } ubo;
 
 struct LodConfigData
@@ -187,7 +193,18 @@ uvec2 meshLODCalculation(vec4 mvPos)
 
 bool potentiallyInFrustum(vec3 mvPos, float radius, float near, float far)
 {
-    return (-mvPos.z + radius > near) && (-mvPos.z - radius < far);
+    bool near_far_test = (-mvPos.z + radius > near) && (-mvPos.z - radius < far);
+
+	float aspect_ratio = ubo.win_dim.x / ubo.win_dim.y;
+
+    vec3 abs_y = normalize(vec3(0.0, abs(mvPos.y) - radius, abs(mvPos.z)));
+    vec3 abs_x = normalize(vec3(abs(mvPos.x) - radius, 0.0, abs(mvPos.z)));
+    float y_frustum_angle = radians(45.0 / 2.0);
+    float x_frustum_angle = aspect_ratio * radians(45.0 / 2.0);
+    bool frustum_test_y = dot(abs_y, vec3(0.0, 0.0, 1.0)) > cos(y_frustum_angle);
+    bool frustum_test_x = dot(abs_x, vec3(0.0, 0.0, 1.0)) > cos(x_frustum_angle);
+
+    return near_far_test && frustum_test_x && frustum_test_y;
 }
 
 void early(vec4 mvPos)
@@ -226,10 +243,10 @@ void late(vec4 mvPos)
 
     visible = visible && potentiallyInFrustum(mvPos.xyz, radius, 1.0, 250.0);
 
-    float level = 0;
+    uint level = 0;
 
     vec4 aabb;
-    if (visible && getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.proj, aabb))
+    if (visible && bool(ubo.culling_updating) && getAxisAlignedBoundingBox(mvPos.xyz, radius, -ubo.zNear, ubo.culling_proj, aabb))
     {
         vec2 frame_size = ubo.win_dim;
 
@@ -254,16 +271,15 @@ void late(vec4 mvPos)
             // Sampler is set up to do min reduction, so this computes the minimum depth of a 2x2 texel quad
             float width = (aabb[0] - aabb[2]) * frame_size.x;
             float height = (aabb[1] - aabb[3]) * frame_size.y;
-            level = floor(log2(max(width, height)));
+            level = uint(floor(log2(max(width, height))));
             float originalDepth = textureLod(inDepthPyramid, vec2(aabb[2], aabb[3]), level).x;
             originalDepth = max(originalDepth, textureLod(inDepthPyramid, vec2(aabb[0], aabb[3]), level).x);
             originalDepth = max(originalDepth, textureLod(inDepthPyramid, vec2(aabb[2], aabb[1]), level).x);
             originalDepth = max(originalDepth, textureLod(inDepthPyramid, vec2(aabb[0], aabb[1]), level).x);
-            originalDepth = max(originalDepth, textureLod(inDepthPyramid, (vec2(aabb[0], aabb[1]) + vec2(aabb[2], aabb[3])) * 0.5, level).x);
             if (originalDepth != 1234.0)
             {
                 float linearlizedDepth = linearizeDepth(originalDepth, -1.0, -250.0) - ubo.zNear;
-                float depthSphere = (-mvPos.z - (radius * 1.5) - ubo.zNear);
+                float depthSphere = (-mvPos.z - (radius * 1.0) - ubo.zNear);
 
                 visible = visible && depthSphere <= linearlizedDepth;
 
@@ -277,29 +293,37 @@ void late(vec4 mvPos)
     {
         aabb = ((aabb + 1.0) * 0.5);
         sphereProjectionDebugBuffer.data[gl_GlobalInvocationID.x].projectedAABB = -aabb;
+        level = 10;
     }
 
-    if ((!visible) || drawnLastFrameBuffer.data[gl_GlobalInvocationID.x])
+    if (!bool(ubo.culling_updating))
     {
-        //indirectBuffer.data[drawBufferIdx].indexCount = 0;
-        //indirectBuffer.data[drawBufferIdx].instanceCount = 0;
-        //indirectBuffer.data[drawBufferIdx].firstIndex = 0;
-        //indirectBuffer.data[drawBufferIdx].vertexOffset = 0;
-        //indirectBuffer.data[drawBufferIdx].firstInstance = 0;
-        //indirectBuffer.data[drawBufferIdx].meshId = gl_GlobalInvocationID.x;
+        visible = drawnLastFrameBuffer.data[gl_GlobalInvocationID.x];
     }
     else
     {
-        uvec2 meshResults = meshLODCalculation(mvPos);
+        if ((!visible) || drawnLastFrameBuffer.data[gl_GlobalInvocationID.x])
+        {
+            //indirectBuffer.data[drawBufferIdx].indexCount = 0;
+            //indirectBuffer.data[drawBufferIdx].instanceCount = 0;
+            //indirectBuffer.data[drawBufferIdx].firstIndex = 0;
+            //indirectBuffer.data[drawBufferIdx].vertexOffset = 0;
+            //indirectBuffer.data[drawBufferIdx].firstInstance = 0;
+            //indirectBuffer.data[drawBufferIdx].meshId = gl_GlobalInvocationID.x;
+        }
+        else
+        {
+            uvec2 meshResults = meshLODCalculation(mvPos);
 
-        uint drawBufferIdx = atomicAdd(indirectBufferCountBuffer.data, 1);
+            uint drawBufferIdx = atomicAdd(indirectBufferCountBuffer.data, 1);
 
-        indirectBuffer.data[drawBufferIdx].indexCount = mix(0, meshResults[0], visible);
-        indirectBuffer.data[drawBufferIdx].instanceCount = mix(0, 1, visible);
-        indirectBuffer.data[drawBufferIdx].firstIndex = mix(0, meshResults[1], visible);
-        indirectBuffer.data[drawBufferIdx].vertexOffset = 0;
-        indirectBuffer.data[drawBufferIdx].firstInstance = 0;
-        indirectBuffer.data[drawBufferIdx].meshId = gl_GlobalInvocationID.x;
+            indirectBuffer.data[drawBufferIdx].indexCount = mix(0, meshResults[0], visible);
+            indirectBuffer.data[drawBufferIdx].instanceCount = mix(0, 1, visible);
+            indirectBuffer.data[drawBufferIdx].firstIndex = mix(0, meshResults[1], visible);
+            indirectBuffer.data[drawBufferIdx].vertexOffset = 0;
+            indirectBuffer.data[drawBufferIdx].firstInstance = 0;
+            indirectBuffer.data[drawBufferIdx].meshId = gl_GlobalInvocationID.x;
+        }
     }
 
     vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
@@ -308,7 +332,7 @@ void late(vec4 mvPos)
     float boundRadius = 5.0;
     modelXZ += vec2(boundRadius + 1.0, boundRadius + 1.0);
     modelXZ /= vec2(boundRadius * 2.0 + 2.0, boundRadius * 2.0 + 2.0);
-    modelXZ *= vec2(100.0, 100.0);
+    modelXZ *= vec2(100.0 - radius, 100.0 - radius);
     ivec2 debugMeshPos = ivec2(int(modelXZ[0]), int(modelXZ[1]));
 
     if (visible)
@@ -321,7 +345,7 @@ void late(vec4 mvPos)
         }
         else
         {
-            vec4 abc[10] = vec4[](vec4(0.0, 0.0, 1.0, 1.0),
+            vec4 abc[11] = vec4[](vec4(0.0, 0.0, 1.0, 1.0),
                                   vec4(0.0, 1.0, 0.0, 1.0),
                                   vec4(0.0, 1.0, 1.0, 1.0),
                                   vec4(1.0, 0.0, 0.0, 1.0),
@@ -330,7 +354,8 @@ void late(vec4 mvPos)
                                   vec4(1.0, 1.0, 1.0, 1.0),
                                   vec4(220.0 / 255.0, 20.0 / 255.0, 60.0 / 255.0, 1.0),
                                   vec4(255.0 / 255.0, 165.0 / 255.0, 0.0 / 255.0, 1.0),
-                                  vec4(255.0 / 255.0, 192.0 / 255.0, 203.0 / 255.0, 1.0));
+                                  vec4(255.0 / 255.0, 192.0 / 255.0, 203.0 / 255.0, 1.0),
+                                  vec4(0.6, 0.6, 0.6, 1.0));
             imageStore(meshesDrawnDebugView, debugMeshPos, abc[uint(level)]);
         }
     }
@@ -359,7 +384,7 @@ void main()
     }
 
     vec4 modelPos = modelTranformsBuffer.data[gl_GlobalInvocationID.x] * vec4(0.0, 0.0, 0.0, 1.0);
-    vec4 mvPos = ubo.view * modelPos;
+    vec4 mvPos = ubo.culling_view * modelPos;
     mvPos = vec4(mvPos.xyz / mvPos.w, 1.0);
 
     if (ubo.display_mode == 25)

@@ -7,6 +7,9 @@ layout(std140, binding = 0) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 proj;
+    mat4 culling_model;
+    mat4 culling_view;
+    mat4 culling_proj;
     mat4 light;
     mat4 lightVP;
 	vec4 Ka;
@@ -25,8 +28,11 @@ layout(std140, binding = 0) uniform UniformBufferObject {
     float shadow_bias;
     float p00;
 	float p11;
+    float culling_p00;
+	float culling_p11;
 	float zNear;
 	int display_mode;
+    int culling_updating;
 } ubo;
 
 layout(std140, binding = 2) readonly buffer ModelTranformsBuffer

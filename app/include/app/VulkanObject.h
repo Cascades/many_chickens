@@ -282,6 +282,9 @@ private:
     float shadow_bias = 0.0;
     bool pcf = false;
     std::string save_path;
+    bool updating_pos = true;
+
+    UniformBufferObject ubo{};
 
     void createImguiPass();
     void createGeometryPass(bool clearAttachmentsOnLoad, VkRenderPass& renderPass);
