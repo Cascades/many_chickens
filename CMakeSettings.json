@@ -4,6 +4,11 @@
       "name": "x64-Debug",
       "generator": "Ninja",
       "configurationType": "Debug",
+      "environments": [
+        {
+          "VULKAN_SDK": "${env.VULKAN_SDK}"
+        }
+      ],
       "inheritEnvironments": [ "msvc_x64_x64" ],
       "buildRoot": "${projectDir}\\out\\build\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",
@@ -15,6 +20,11 @@
       "name": "x64-Release",
       "generator": "Ninja",
       "configurationType": "RelWithDebInfo",
+      "environments": [
+        {
+          "VULKAN_SDK": "${env.VULKAN_SDK}"
+        }
+      ],
       "inheritEnvironments": [ "msvc_x64_x64" ],
       "buildRoot": "${projectDir}\\out\\build\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",

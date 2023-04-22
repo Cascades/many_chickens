@@ -18,12 +18,14 @@
 #include <iostream>
 #include <optional>
 
+#include "app/Camera.h"
 #include "app/Model.h"
 #include "app/ShaderProgram.h"
+#include "app/DescriptorInfo.h"
 
 class VulkanObject {
 public:
-    void initVulkan(GLFWwindow* window);
+    void initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> camera);
     void drawFrame();
     void cleanup();
 
@@ -33,6 +35,26 @@ public:
         VulkanObject* app = reinterpret_cast<VulkanObject*>(glfwGetWindowUserPointer(window));
         app->framebufferResized = true;
     }
+
+    static void mouseMoveCallback(GLFWwindow* window, double xposIn, double yposIn)
+    {
+        VulkanObject* app = reinterpret_cast<VulkanObject*>(glfwGetWindowUserPointer(window));
+        if (app->camera)
+        {
+            app->camera->mouse_callback(window, xposIn, yposIn);
+        }
+    }
+
+    static void scrollMoveCallback(GLFWwindow* window, double xoffset, double yoffset)
+    {
+        VulkanObject* app = reinterpret_cast<VulkanObject*>(glfwGetWindowUserPointer(window));
+        if (app->camera)
+        {
+            app->camera->scroll_callback(window, xoffset, yoffset);
+        }
+    }
+
+    std::shared_ptr<mc::Camera> camera;
 
 private:
     // pointer to GLFW window instance
@@ -46,6 +68,7 @@ private:
     VkInstance instance;
     // create instance of debug messenger
     VkDebugUtilsMessengerEXT debugMessenger;
+    VkDebugReportCallbackEXT reportCallbackMessengerEXT;
     // create a "surface" to interface with any window system
     VkSurfaceKHR surface;
 
@@ -60,7 +83,7 @@ private:
 
     // our swap chain object
     VkSwapchainKHR swapChain;
-    // vector of our swap chain images 
+    // vector of our swap chain images
     std::vector<VkImage> swapChainImages;
     // the format of our swap chain
     VkFormat swapChainImageFormat;
@@ -81,6 +104,13 @@ private:
         VkRenderPass renderPass;
     } offScreenPass;
 
+    VkImage depthPyramidImage;
+    VkDeviceMemory depthPyramidMem;
+    std::vector<VkImageView> depthPyramidViews;
+    VkImageView depthPyramidMultiMipView;
+    std::vector<VkSampler> depthPyramidSamplers;
+    std::vector<mc::DescriptorInfo<VkDescriptorImageInfo>> depthPyramidDescriptorInfo;
+
     struct DepthFrameBuffer {
         int32_t width, height;
         VkFramebuffer frameBuffer;
@@ -89,7 +119,7 @@ private:
         VkSampler pcfsampler;
         VkRenderPass renderPass;
     } shadowPass;
-	
+
     // vector of image views (to access our images)
     std::vector<VkImageView> swapChainImageViews;
     // vector of all frame buffers
@@ -98,18 +128,24 @@ private:
     std::vector<VkFramebuffer> imgui_frame_buffers;
 
     VkFramebuffer geometryFrameBuffer;
-	
+
     // render pass object
     VkRenderPass renderPass;
-    VkRenderPass geometryPass;
+    VkRenderPass earlyGeometryPass;
+    VkRenderPass lateGeometryPass;
     VkRenderPass imgui_render_pass;
     //VkDescriptorSetLayout descriptorSetLayout;
     //VkDescriptorSetLayout lightingSetLayout;
     //VkDescriptorSetLayout shadowSetLayout;
+    std::shared_ptr<mc::ShaderProgram> computeProgram;
+    std::shared_ptr<mc::ShaderProgram> depthPyramidComputeProgram;
     std::shared_ptr<mc::ShaderProgram> geometryProgram;
     std::shared_ptr<mc::ShaderProgram> lightingProgram;
     std::shared_ptr<mc::ShaderProgram> shadowProgram;
+    VkPipeline computePipeline;
+    VkPipeline depthPyramidComputePipeline;
     VkPipeline graphicsPipeline;
+    VkPipeline lateGraphicsPipeline;
     VkPipeline lightingPipeline;
     VkPipeline shadowPipeline;
 
@@ -134,7 +170,7 @@ private:
     // bool to store if we have resized
     bool framebufferResized = false;
 
-    Model dragon_model;
+    Model<5> dragon_model;
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
     VkBuffer indexBuffer;
@@ -142,10 +178,29 @@ private:
 
     VkBuffer SSBO;
     VkDeviceMemory SSBOMemory;
+    VkBuffer scaleSSBO;
+    VkDeviceMemory scaleSSBOMemory;
+    std::vector<VkBuffer> indirectLodSSBO;
+    std::vector<VkDeviceMemory> indirectLodSSBOMemory;
+    std::vector<VkBuffer> indirectLodCountSSBO;
+    std::vector<VkDeviceMemory> indirectLodCountSSBOMemory;
+    std::vector<VkBuffer> lodConfigSSBO;
+    std::vector<VkDeviceMemory> lodConfigSSBOMemory;
+    std::vector<VkBuffer> drawnLastFrameSSBO;
+    std::vector<VkDeviceMemory> drawnLastFrameSSBOMemory;
+    std::vector<VkBuffer> sphereProjectionDebugSSBO;
+    std::vector<VkDeviceMemory> sphereProjectionDebugSSBOMemory;
+
+    static constexpr size_t chickenCount = 100000;// 50;
+
+    float timestampPeriod = 1.0f;
 
     struct ModelTransforms {
-        std::array<glm::mat4, 100> modelMatricies{};
+        std::array<glm::mat4, chickenCount> modelMatricies{};
     };
+
+    std::unique_ptr<ModelTransforms> modelTransforms;
+    std::unique_ptr<std::array<float, chickenCount>> modelScales;
 
     void createSSBOs();
 
@@ -155,9 +210,13 @@ private:
     std::vector<VkBuffer> shadowUniformBuffers;
     std::vector<VkDeviceMemory> shadowUniformBuffersMemory;
 
+    VkDescriptorPool computeDescriptorPool;
+    VkDescriptorPool depthPyramidComputeDescriptorPool;
     VkDescriptorPool descriptorPool;
     VkDescriptorPool lightingDescriptorPool;
     VkDescriptorPool shadowDescriptorPool;
+    std::vector<VkDescriptorSet> computeDescriptorSets;
+    std::vector<VkDescriptorSet> depthPyramidComputeDescriptorSets;
     std::vector<VkDescriptorSet> descriptorSets;
     std::vector<VkDescriptorSet> lightingDescriptorSets;
     std::vector<VkDescriptorSet> shadowDescriptorSets;
@@ -171,9 +230,36 @@ private:
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
+    VkSampler depthSampler;
+
+    VkImage meshesDrawnDebugViewImage;
+    VkDeviceMemory meshesDrawnDebugViewImageMemory;
+    VkImageView meshesDrawnDebugViewImageView;
+    VkSampler meshesDrawnDebugViewSampler;
+    VkDescriptorSet meshesDrawnDebugViewImageViewImGUITexID;
+
+    VkSampler depthNearestSampler;
+    VkSampler depthNearestMinSampler;
 
     std::string MODEL_PATH;
     std::string TEXTURE_PATH;
+
+    std::vector<VkQueryPool> queryPools;
+    std::pair<uint32_t, uint32_t> earlyCullQueryIndices;
+    std::pair<uint32_t, uint32_t> earlyRenderQueryIndices;
+    std::pair<uint32_t, uint32_t> depthPyramidQueryIndices;
+    std::pair<uint32_t, uint32_t> lateCullQueryIndices;
+    std::pair<uint32_t, uint32_t> lateRenderQueryIndices;
+
+    static constexpr size_t queryHistorySamples = 1000;
+
+    std::array<float, queryHistorySamples> earlyCullTimeHistory = {};
+    std::array<float, queryHistorySamples> earlyRenderTimeHistory = {};
+    std::array<float, queryHistorySamples> depthPyramidTimeHistory = {};
+    std::array<float, queryHistorySamples> lateCullTimeHistory = {};
+    std::array<float, queryHistorySamples> lateRenderTimeHistory = {};
+
+    bool updatingImGuiQueryData = true;
 
     bool model_stage_on = false;
     bool texture_stage_on = false;
@@ -195,11 +281,17 @@ private:
     int display_mode = 0;
     float shadow_bias = 0.0;
     bool pcf = false;
+    std::string save_path;
+    bool updating_pos = true;
+
+    UniformBufferObject ubo{};
 
     void createImguiPass();
-    void createGeometryPass();
+    void createGeometryPass(bool clearAttachmentsOnLoad, VkRenderPass& renderPass);
+    void createEarlyGeometryPass();
+    void createLateGeometryPass();
     void createShadowPass();
-	
+
     VkFormat findDepthFormat();
 
     bool hasStencilComponent(VkFormat format);
@@ -210,7 +302,7 @@ private:
 
     void createTextureSampler();
 
-    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t baseMipLevel = 0, uint32_t levelCount = 1);
 
     void loadModel();
 
@@ -218,9 +310,20 @@ private:
 
     void createTextureImage();
 
-    void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
+    void createImage(
+        uint32_t width,
+        uint32_t height,
+        VkFormat format,
+        VkImageTiling tiling,
+        VkImageUsageFlags usage,
+        VkMemoryPropertyFlags properties,
+        VkImage& image,
+        VkDeviceMemory& imageMemory,
+        uint32_t mipLevels = 1);
 
     void createDescriptorPool();
+
+    void createQueryPools();
 
     void createUniformBuffers();
 
@@ -230,7 +333,7 @@ private:
 
     void createVertexBuffer();
 
-    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t baseMipLevel = 0, uint32_t levelCount = VK_REMAINING_MIP_LEVELS);
 
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
@@ -278,6 +381,8 @@ private:
 
     void createDescriptorSets();
 
+    void createComputePipeline();
+
     // create the graphics pipeline.
     void createGraphicsPipeline();
 
@@ -295,6 +400,10 @@ private:
     void updateUniformBuffer(uint32_t currentImage);
 
     void updateSSBO();
+
+    void updateLODSSBO();
+
+    uint32_t getPow2Size(uint32_t width, uint32_t height);
 
     // create a VkShaderModule to encapsulate our shaders
     VkShaderModule createShaderModule(const std::vector<char>& code);
@@ -340,6 +449,32 @@ private:
         void* pUserData) {
         // output message
         std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+
+        if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+        {
+            assert(false);
+        }
+
+        // unless testing validation layer itself, return VK_FALSE (0)
+        return VK_FALSE;
+    }
+
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallbackEXT(
+        VkDebugReportFlagsEXT                       flags,
+        VkDebugReportObjectTypeEXT                  objectType,
+        uint64_t                                    object,
+        size_t                                      location,
+        int32_t                                     messageCode,
+        const char* pLayerPrefix,
+        const char* pMessage,
+        void* pUserData) {
+        // output message
+        std::cerr << "validation layer: " << pMessage << std::endl;
+
+        //if (messageCode >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+        //{
+        //    assert(false);
+        //}
 
         // unless testing validation layer itself, return VK_FALSE (0)
         return VK_FALSE;

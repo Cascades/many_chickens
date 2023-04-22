@@ -1,5 +1,7 @@
 add_subdirectory(glfw)
 add_subdirectory(tinyobjloader)
 add_subdirectory(glm)
+add_subdirectory(meshoptimizer)
 include(stb.cmake)
 include(imgui.cmake)
+include(implot.cmake)

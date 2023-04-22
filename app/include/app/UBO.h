@@ -9,12 +9,16 @@ struct UniformBufferObject {
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
+	glm::mat4 culling_model;
+	glm::mat4 culling_view;
+	glm::mat4 culling_proj;
 	glm::mat4 light;
 	glm::mat4 lightVP;
 	glm::vec4 Ka;
 	glm::vec4 Kd;
 	glm::vec4 Ks;
 	glm::vec4 Ke;
+	glm::vec4 top_down_model_bounds;
 	glm::vec2 win_dim;
 	glm::float32 Ns;
 	glm::float32 model_stage_on;
@@ -25,7 +29,13 @@ struct UniformBufferObject {
 	glm::float32 diffuse;
 	glm::float32 ambient;
 	glm::float32 shadow_bias;
+	glm::float32 p00;
+	glm::float32 p11;
+	glm::float32 culling_p00;
+	glm::float32 culling_p11;
+	glm::float32 zNear;
 	glm::int32 display_mode;
+	glm::int32 culling_updating;
 };
 
 struct ShadowUniformBufferObject
