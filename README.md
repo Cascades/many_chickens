@@ -41,11 +41,14 @@ First, a diagram of the occlusion culling flow:
      2. The early pass will draw contents of previous frame.
      3. The late pass will draw the contents which was missing from the early pass.
 
-![Pipeline shown with no debugging](./media/no_debug.mp4)
+#### [Pipeline shown with no debugging](https://youtu.be/wqrAQBYW0mQ)
+https://user-images.githubusercontent.com/5692370/233804472-b6780214-5f80-4801-bcb0-32711eddb4c7.mp4
 
-![Pipeline shown with debugging, showcasing occlusion culling](./media/occlusion_culling_debug.mp4)
+#### [Pipeline shown with debugging, showcasing occlusion culling](https://youtu.be/M1ZRBybtrEA)
+https://user-images.githubusercontent.com/5692370/233805387-00165bf6-7209-4146-993f-3261f79ad32e.mp4
 
-![Pipeline shown with debugging, showcasing frustum culling](./media/frustum_culling_debug.mp4)
+#### [Pipeline shown with debugging, showcasing frustum culling](https://youtu.be/-1SxEx7pKro)
+https://user-images.githubusercontent.com/5692370/233804557-110f87e1-7e9e-497a-99f3-371aeb446acd.mp4
 
 ### Discrete LOD
 
