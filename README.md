@@ -1,8 +1,20 @@
-* Requires Vulkan SDK
-* Should run on any platform
-* Contains submodules
-* Contains CMake, use that as you wish.
+## Description
+This repository is for me to try and improve my Vulkan development and graphics programming.
 
+## Building
+**Requires Vulkan SDK installed**
+
+```
+git submodule update --init --recursive
+mkdir ../build_dir
+cd ../build_dir
+cmake ../many_chickens .
+cmake --build .
+cmake --install . --prefix=<your_install_dir>
+<your_install_dir>/bin/app
+```
+
+## Notes
 ### Two-Pass GPU Occlusion Culling & Frustum Culling
 
 This repoditory implements occlusion culling completely on the GPU using a two-pass method. The method is well documented by various blogs and playlists<sup>[1] [2] [3] [4]</sup>, but I'll run through my exact implementation here as I've tried to not look at too many references.
