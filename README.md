@@ -137,7 +137,9 @@ And with this we achieve only 4 samples per chicken, which conservatively identi
 
 # Discrete LOD
 
-TODO: Code is done, need to write about it.
+This is a relatively simple algorithm. At the moment I use [meshoptimizer](https://github.com/zeux/meshoptimizer)'s `meshopt_simplify` to generate a single vertex buffer, and multiple index buffers for each of my LODs. Ina compute pass I then select which lod to draw based on the distance from the screen that the mesh exists at. 
+
+This would be better improvved by basing my LOD selection on something like size of mesh triangle in screen space, but that's for the future!
 
 # Demo media
 
@@ -149,6 +151,7 @@ https://user-images.githubusercontent.com/5692370/234128056-c3b241e1-3482-4abe-9
 
 #### [Pipeline shown with debugging, showcasing frustum culling](https://youtu.be/-1SxEx7pKro)
 https://user-images.githubusercontent.com/5692370/234128094-99048d08-1e8c-48e9-bc75-0b303826b1c5.mp4
+
 
 [1]: https://medium.com/@mil_kru/two-pass-occlusion-culling-4100edcad501
 [2]: https://interplayoflight.wordpress.com/2017/11/15/experiments-in-gpu-based-occlusion-culling/
