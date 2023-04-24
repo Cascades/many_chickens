@@ -1,7 +1,18 @@
-* Requires Vulkan SDK
-* Should run on any platform
-* Contains submodules
-* Contains CMake, use that as you wish.
+# Description
+This repository is for me to try and improve my Vulkan development and graphics programming.
+
+# Building
+**Requires Vulkan SDK installed**
+
+```
+git submodule update --init --recursive
+mkdir ../build_dir
+cd ../build_dir
+cmake ../many_chickens .
+cmake --build .
+cmake --install . --prefix=<your_install_dir>
+<your_install_dir>/bin/app
+```
 
 # Two-Pass GPU Occlusion Culling & Frustum Culling
 
@@ -124,7 +135,11 @@ And with this we achieve only 4 samples per chicken, which conservatively identi
     <img src="./media/4_samples_example.png" />
 </p>
 
-## Demo media
+# Discrete LOD
+
+TODO: Code is done, need to write about it.
+
+# Demo media
 
 #### [Pipeline shown with no debugging](https://youtu.be/wqrAQBYW0mQ)
 https://user-images.githubusercontent.com/5692370/234128074-9ed89579-1202-4845-a384-bdffe6f65b12.mp4
@@ -134,10 +149,6 @@ https://user-images.githubusercontent.com/5692370/234128056-c3b241e1-3482-4abe-9
 
 #### [Pipeline shown with debugging, showcasing frustum culling](https://youtu.be/-1SxEx7pKro)
 https://user-images.githubusercontent.com/5692370/234128094-99048d08-1e8c-48e9-bc75-0b303826b1c5.mp4
-
-### Discrete LOD
-
-TODO: Code is done, need to write about it.
 
 [1]: https://medium.com/@mil_kru/two-pass-occlusion-culling-4100edcad501
 [2]: https://interplayoflight.wordpress.com/2017/11/15/experiments-in-gpu-based-occlusion-culling/
