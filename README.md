@@ -1,9 +1,25 @@
-* Requires Vulkan SDK
-* Should run on any platform
-* Contains submodules
-* Contains CMake, use that as you wish.
+## Description
+This repository is for me to try and improve my Vulkan development and graphics programming.
 
+<<<<<<< HEAD
 # Two-Pass GPU Occlusion Culling & Frustum Culling
+=======
+## Building
+**Requires Vulkan SDK installed**
+
+```
+git submodule update --init --recursive
+mkdir ../build_dir
+cd ../build_dir
+cmake ../many_chickens .
+cmake --build .
+cmake --install . --prefix=<your_install_dir>
+<your_install_dir>/bin/app
+```
+
+## Notes
+### Two-Pass GPU Occlusion Culling & Frustum Culling
+>>>>>>> master
 
 This repoditory implements occlusion culling completely on the GPU using a two-pass method. The method is well documented by various blogs and playlists<sup>[1] [2] [3] [4]</sup>, but I'll run through my exact implementation here as I've tried to not look at too many references.
 
@@ -127,17 +143,19 @@ And with this we achieve only 4 samples per chicken, which conservatively identi
 ## Demo media
 
 #### [Pipeline shown with no debugging](https://youtu.be/wqrAQBYW0mQ)
-https://user-images.githubusercontent.com/5692370/233804472-b6780214-5f80-4801-bcb0-32711eddb4c7.mp4
+https://user-images.githubusercontent.com/5692370/234128074-9ed89579-1202-4845-a384-bdffe6f65b12.mp4
 
 #### [Pipeline shown with debugging, showcasing occlusion culling](https://youtu.be/M1ZRBybtrEA)
-https://user-images.githubusercontent.com/5692370/233805387-00165bf6-7209-4146-993f-3261f79ad32e.mp4
+https://user-images.githubusercontent.com/5692370/234128056-c3b241e1-3482-4abe-9519-1cb91aa5c4b9.mp4
 
 #### [Pipeline shown with debugging, showcasing frustum culling](https://youtu.be/-1SxEx7pKro)
-https://user-images.githubusercontent.com/5692370/233804557-110f87e1-7e9e-497a-99f3-371aeb446acd.mp4
+https://user-images.githubusercontent.com/5692370/234128094-99048d08-1e8c-48e9-bc75-0b303826b1c5.mp4
 
 ### Discrete LOD
 
-TODO: Code is done, need to write about it.
+This is a relatively simple algorithm. At the moment I use [meshoptimizer](https://github.com/zeux/meshoptimizer)'s `meshopt_simplify` to generate a single vertex buffer, and multiple index buffers for each of my LODs. Ina compute pass I then select which lod to draw based on the distance from the screen that the mesh exists at. 
+
+This would be better improvved by basing my LOD selection on something like size of mesh triangle in screen space, but that's for the future!
 
 [1]: https://medium.com/@mil_kru/two-pass-occlusion-culling-4100edcad501
 [2]: https://interplayoflight.wordpress.com/2017/11/15/experiments-in-gpu-based-occlusion-culling/
