@@ -3643,7 +3643,7 @@ void VulkanObject::drawFrame() {
         ImPlot::EndPlot();
     }
 
-    ImGui::Image((void*)meshesDrawnDebugViewImageViewImGUITexID, ImVec2(500, 500));
+    ImGui::Image((void*)meshesDrawnDebugViewImageViewImGUITexID, ImVec2(250, 250));
 
     ImGui::Checkbox("Updating pod", &updating_pos);
 
@@ -4076,14 +4076,20 @@ void VulkanObject::updateSSBO() {
     }
     else
     {
+        auto const big_chicken_trans = glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 0.0f, -0.0f));
+        modelScales->operator[](0) = 8.0;
+        auto const big_chicken_scale = glm::scale(glm::mat4(1.0), glm::vec3(modelScales->operator[](0)));
+        auto const big_chicken_rot = glm::rotate(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        modelTransforms->modelMatricies[0] = big_chicken_trans * big_chicken_rot * big_chicken_scale;
+
         std::random_device dev;
         std::mt19937 rng(dev());
         std::uniform_real_distribution<float> translation_dist(-5.0f, 5.0f);
-        std::uniform_real_distribution<float> scale_dist(0.1f, 5.0f);
+        std::uniform_real_distribution<float> scale_dist(0.1f, 0.75f);
         std::uniform_real_distribution<float> rotation_dist(0.0f, 2.0f * glm::pi<float>());
 
         //std::fill(std::begin(ssbo->modelMatricies), std::end(ssbo->modelMatricies), glm::mat4{ 1.0f });
-        for (size_t matrixIndex = 0; matrixIndex < modelTransforms->modelMatricies.size(); ++matrixIndex)
+        for (size_t matrixIndex = 1; matrixIndex < modelTransforms->modelMatricies.size(); ++matrixIndex)
         {
             glm::mat4 translation_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(translation_dist(rng), translation_dist(rng), translation_dist(rng)))
                 * glm::translate(glm::mat4(1.0f), glm::vec3(17.0f, 0.0f, 0.0f));

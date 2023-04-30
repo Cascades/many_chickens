@@ -191,7 +191,7 @@ private:
     std::vector<VkBuffer> sphereProjectionDebugSSBO;
     std::vector<VkDeviceMemory> sphereProjectionDebugSSBOMemory;
 
-    static constexpr size_t chickenCount = 100000;// 50;
+    static constexpr size_t chickenCount = 150000;// 50;
 
     float timestampPeriod = 1.0f;
 
