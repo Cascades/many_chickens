@@ -37,6 +37,7 @@
 #include <imgui_impl_vulkan.h>
 
 #include <implot.h>
+#include <implot_internal.h>
 
 #include "app/Model.h"
 #include "app/DescriptorInfo.h"
@@ -2933,8 +2934,8 @@ void VulkanObject::createCommandBuffers() {
 
         std::array<VkImageMemoryBarrier, 1> renderPassOutputFormatConversions{};
         renderPassOutputFormatConversions[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        renderPassOutputFormatConversions[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        renderPassOutputFormatConversions[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        renderPassOutputFormatConversions[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        renderPassOutputFormatConversions[0].dstAccessMask = VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT;
         renderPassOutputFormatConversions[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         renderPassOutputFormatConversions[0].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         renderPassOutputFormatConversions[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -2951,8 +2952,8 @@ void VulkanObject::createCommandBuffers() {
 
         vkCmdPipelineBarrier(
             commandBuffers[i],
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             VK_DEPENDENCY_BY_REGION_BIT,
             renderPassMemoryOutputFormatConversions.size(),
             renderPassMemoryOutputFormatConversions.data(),
@@ -3026,7 +3027,7 @@ void VulkanObject::createCommandBuffers() {
         initialPyramidBarriers[0].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
         initialPyramidBarriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        initialPyramidBarriers[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        initialPyramidBarriers[1].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
         initialPyramidBarriers[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
         initialPyramidBarriers[1].oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         initialPyramidBarriers[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -3628,15 +3629,43 @@ void VulkanObject::drawFrame() {
         std::transform(lateCullTimeHistory.begin(), lateCullTimeHistory.end(), rollingTotals.begin(), rollingTotals.begin(), std::plus<float>());
         std::transform(lateRenderTimeHistory.begin(), lateRenderTimeHistory.end(), rollingTotals.begin(), rollingTotals.begin(), std::plus<float>());
         
-        ImPlot::PlotShaded("Late render", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+        {
+            ImPlot::PushStyleColor(ImPlotCol_Fill, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+            ImPlot::PlotShaded("Late render", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+            ImPlot::PopStyleColor();
+        }
+
         std::transform(rollingTotals.begin(), rollingTotals.end(), lateRenderTimeHistory.begin(), rollingTotals.begin(), std::minus<float>());
-        ImPlot::PlotShaded("Late cull", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+        
+        {
+            ImPlot::PushStyleColor(ImPlotCol_Fill, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+            ImPlot::PlotShaded("Late cull", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+            ImPlot::PopStyleColor();
+        }
+
         std::transform(rollingTotals.begin(), rollingTotals.end(), lateCullTimeHistory.begin(), rollingTotals.begin(), std::minus<float>());
-        ImPlot::PlotShaded("Depth pyramid", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+        
+        {
+            ImPlot::PushStyleColor(ImPlotCol_Fill, ImVec4(0.0f, 0.0f, 1.0f, 1.0f));
+            ImPlot::PlotShaded("Depth pyramid", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+            ImPlot::PopStyleColor();
+        }
+
         std::transform(rollingTotals.begin(), rollingTotals.end(), depthPyramidTimeHistory.begin(), rollingTotals.begin(), std::minus<float>());
-        ImPlot::PlotShaded("Early render", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+        
+        {
+            ImPlot::PushStyleColor(ImPlotCol_Fill, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+            ImPlot::PlotShaded("Early render", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+            ImPlot::PopStyleColor();
+        }
+        
         std::transform(rollingTotals.begin(), rollingTotals.end(), earlyRenderTimeHistory.begin(), rollingTotals.begin(), std::minus<float>());
-        ImPlot::PlotShaded("Early cull", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+        
+        {
+            ImPlot::PushStyleColor(ImPlotCol_Fill, ImVec4(1.0f, 0.0f, 1.0f, 1.0f));
+            ImPlot::PlotShaded("Early cull", frameCountNums.data(), rollingTotals.data(), queryHistorySamples);
+            ImPlot::PopStyleColor();
+        }
 
         ImPlot::PopStyleVar();
 
