@@ -147,15 +147,9 @@ This would be better improvved by basing my LOD selection on something like size
 
 # Demo media
 
-#### [Pipeline shown with no debugging](https://youtu.be/wqrAQBYW0mQ)
-https://user-images.githubusercontent.com/5692370/234128074-9ed89579-1202-4845-a384-bdffe6f65b12.mp4
+[Click the image to play!](https://youtu.be/GZQd4QkHUr4)
 
-#### [Pipeline shown with debugging, showcasing occlusion culling](https://youtu.be/M1ZRBybtrEA)
-https://user-images.githubusercontent.com/5692370/234128056-c3b241e1-3482-4abe-9519-1cb91aa5c4b9.mp4
-
-#### [Pipeline shown with debugging, showcasing frustum culling](https://youtu.be/-1SxEx7pKro)
-https://user-images.githubusercontent.com/5692370/234128094-99048d08-1e8c-48e9-bc75-0b303826b1c5.mp4
-
+[![Watch the video](https://img.youtube.com/vi/GZQd4QkHUr4/maxresdefault.jpg)](https://youtu.be/GZQd4QkHUr4)
 
 [1]: https://medium.com/@mil_kru/two-pass-occlusion-culling-4100edcad501
 [2]: https://interplayoflight.wordpress.com/2017/11/15/experiments-in-gpu-based-occlusion-culling/

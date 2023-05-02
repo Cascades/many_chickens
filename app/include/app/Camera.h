@@ -90,7 +90,7 @@ namespace mc
         {
             float velocity = MovementSpeed * deltaTime;
             if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-                velocity *= 2.0f;
+                velocity *= 4.0f;
             if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
                 velocity /= 10.0f;
             if (direction == FORWARD)
