@@ -682,17 +682,12 @@ void VulkanObject::createSSBOs() {
 
     bufferSize = modelTransforms->modelMatricies.size() * sizeof(VkBool32);
 
-    drawnLastFrameSSBO.resize(swapChainImages.size());
-    drawnLastFrameSSBOMemory.resize(swapChainImages.size());
-
-    //for (size_t i = 0; i < swapChainImages.size(); i++) {
-        createBuffer(
-            bufferSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            drawnLastFrameSSBO[0],
-            drawnLastFrameSSBOMemory[0]);
-    //}
+    createBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        drawnLastFrameSSBO,
+        drawnLastFrameSSBOMemory);
 
     struct sphereProjectionDebugData
     {
@@ -951,6 +946,14 @@ void VulkanObject::cleanupSwapChain() {
     vkDestroyImage(device, depthImage, nullptr);
     vkFreeMemory(device, depthImageMemory, nullptr);
 
+    vkDestroyImage(device, depthPyramidImage, nullptr);
+    vkFreeMemory(device, depthPyramidMem, nullptr);
+    for (size_t i = 0; i < depthPyramidViews.size(); ++i)
+    {
+        vkDestroyImageView(device, depthPyramidViews[i], nullptr);
+    }
+    vkDestroyImageView(device, depthPyramidMultiMipView, nullptr);
+
     // destroy all framebuffers in swap chain
     for (size_t i = 0; i < swapChainFramebuffers.size(); i++) {
         vkDestroyFramebuffer(device, imgui_frame_buffers[i], nullptr);
@@ -984,12 +987,18 @@ void VulkanObject::cleanupSwapChain() {
         vkFreeMemory(device, indirectLodCountSSBOMemory[i], nullptr);
         vkDestroyBuffer(device, lodConfigSSBO[i], nullptr);
         vkFreeMemory(device, lodConfigSSBOMemory[i], nullptr);
-        vkDestroyBuffer(device, drawnLastFrameSSBO[0], nullptr);
-        vkFreeMemory(device, drawnLastFrameSSBOMemory[0], nullptr);
         vkDestroyBuffer(device, sphereProjectionDebugSSBO[i], nullptr);
         vkFreeMemory(device, sphereProjectionDebugSSBOMemory[i], nullptr);
     }
 
+    for (size_t i = 0; i < shadowUniformBuffers.size(); i++)
+    {
+        vkDestroyBuffer(device, shadowUniformBuffers[i], nullptr);
+        vkFreeMemory(device, shadowUniformBuffersMemory[i], nullptr);
+    }
+
+    vkDestroyBuffer(device, drawnLastFrameSSBO, nullptr);
+    vkFreeMemory(device, drawnLastFrameSSBOMemory, nullptr);
     vkDestroyBuffer(device, SSBO, nullptr);
     vkFreeMemory(device, SSBOMemory, nullptr);
     vkDestroyBuffer(device, scaleSSBO, nullptr);
@@ -1007,6 +1016,8 @@ void VulkanObject::cleanup() {
     // cleanup swap chain
     cleanupSwapChain();
 
+    vkDestroyFramebuffer(device, offScreenPass.frameBuffer, nullptr);
+
     vkDestroyImageView(device, offScreenPass.position.view, nullptr);
     vkDestroyImage(device, offScreenPass.position.image, nullptr);
     vkFreeMemory(device, offScreenPass.position.mem, nullptr);
@@ -1022,6 +1033,17 @@ void VulkanObject::cleanup() {
     vkDestroyImageView(device, offScreenPass.depth.view, nullptr);
     vkDestroyImage(device, offScreenPass.depth.image, nullptr);
     vkFreeMemory(device, offScreenPass.depth.mem, nullptr);
+    vkDestroyRenderPass(device, offScreenPass.renderPass, nullptr);
+
+    vkDestroyFramebuffer(device, shadowPass.frameBuffer, nullptr);
+
+    vkDestroyImageView(device, shadowPass.depth.view, nullptr);
+    vkDestroyImage(device, shadowPass.depth.image, nullptr);
+    vkFreeMemory(device, shadowPass.depth.mem, nullptr);
+
+    vkDestroySampler(device, shadowPass.sampler, nullptr);
+    vkDestroySampler(device, shadowPass.pcfsampler, nullptr);
+    vkDestroyRenderPass(device, shadowPass.renderPass, nullptr);
 
     vkDestroyFramebuffer(device, geometryFrameBuffer, nullptr);
 
@@ -1031,24 +1053,45 @@ void VulkanObject::cleanup() {
     geometryProgram.reset();
     shadowProgram.reset();
 
+    vkDestroyPipeline(device, computePipeline, nullptr);
+    vkDestroyPipeline(device, depthPyramidComputePipeline, nullptr);
+    vkDestroyPipeline(device, lateGraphicsPipeline, nullptr);
+    vkDestroyPipeline(device, shadowPipeline, nullptr);
+
     vkDestroyRenderPass(device, earlyGeometryPass, nullptr);
     vkDestroyRenderPass(device, lateGeometryPass, nullptr);
     vkDestroyPipeline(device, lightingPipeline, nullptr);
 
     vkDestroyDescriptorPool(device, lightingDescriptorPool, nullptr);
+    vkDestroyDescriptorPool(device, computeDescriptorPool, nullptr);
+    vkDestroyDescriptorPool(device, depthPyramidComputeDescriptorPool, nullptr);
+    vkDestroyDescriptorPool(device, shadowDescriptorPool, nullptr);
 
-
+    vkDestroySampler(device, meshesDrawnDebugViewSampler, nullptr);
+    vkDestroyImageView(device, meshesDrawnDebugViewImageView, nullptr);
     vkDestroySampler(device, textureSampler, nullptr);
     vkDestroyImageView(device, textureImageView, nullptr);
 
+    vkDestroyImage(device, meshesDrawnDebugViewImage, nullptr);
     vkDestroyImage(device, textureImage, nullptr);
+    vkFreeMemory(device, meshesDrawnDebugViewImageMemory, nullptr);
     vkFreeMemory(device, textureImageMemory, nullptr);
+
+    vkDestroySampler(device, depthNearestSampler, nullptr);
+    vkDestroySampler(device, depthNearestMinSampler, nullptr);
 
     vkDestroyBuffer(device, indexBuffer, nullptr);
     vkFreeMemory(device, indexBufferMemory, nullptr);
 
     vkDestroyBuffer(device, vertexBuffer, nullptr);
     vkFreeMemory(device, vertexBufferMemory, nullptr);
+
+    vkDestroySampler(device, depthSampler, nullptr);
+
+    for (size_t i = 0; i < queryPools.size(); ++i)
+    {
+        vkDestroyQueryPool(device, queryPools[i], nullptr);
+    }
 
     // destroy all semaphores and fences
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -2052,7 +2095,7 @@ void VulkanObject::createDescriptorSets() {
             dragon_model.getTotalLodLevels() * sizeof(LodConfigData)};
 
         mc::DescriptorInfo<VkDescriptorBufferInfo> drawnLastFrameSsboInfo{
-            drawnLastFrameSSBO[0],
+            drawnLastFrameSSBO,
             0,
             modelTransforms->modelMatricies.size() * sizeof(uint32_t)};
 
@@ -3825,16 +3868,14 @@ void VulkanObject::drawFrame() {
         vkUnmapMemory(device, scaleSSBOMemory);
 
         std::cout << "Updating drawnLastFrameBuffer" << std::endl;
-        drawnLastFrameSSBO.resize(swapChainImages.size());
-        drawnLastFrameSSBOMemory.resize(swapChainImages.size());
 
         auto zerodVisibility = std::make_unique<std::array<vk::Bool32, chickenCount>>();
         zerodVisibility->fill(false);
 
         data = nullptr;
-        vkMapMemory(device, drawnLastFrameSSBOMemory[0], 0, chickenCount * sizeof(vk::Bool32), 0, &data);
+        vkMapMemory(device, drawnLastFrameSSBOMemory, 0, chickenCount * sizeof(vk::Bool32), 0, &data);
         memcpy(data, zerodVisibility.get(), chickenCount * sizeof(vk::Bool32));
-        vkUnmapMemory(device, drawnLastFrameSSBOMemory[0]);
+        vkUnmapMemory(device, drawnLastFrameSSBOMemory);
     }
 
     std::string camera_pos = std::format("Camera pos: ({}, {}, {})", camera->Position.x, camera->Position.y, camera->Position.z);
@@ -4147,19 +4188,14 @@ void VulkanObject::updateSSBO() {
 
 
     std::cout << "Updating drawnLastFrameBuffer" << std::endl;
-    drawnLastFrameSSBO.resize(swapChainImages.size());
-    drawnLastFrameSSBOMemory.resize(swapChainImages.size());
 
     auto zerodVisibility = std::make_unique<std::array<vk::Bool32, chickenCount>>();
     zerodVisibility->fill(false);
 
-    //for (size_t i = 0; i < swapChainImages.size(); i++)
-    //{
-        data = nullptr;
-        vkMapMemory(device, drawnLastFrameSSBOMemory[0], 0, chickenCount * sizeof(vk::Bool32), 0, &data);
-        memcpy(data, zerodVisibility.get(), chickenCount * sizeof(vk::Bool32));
-        vkUnmapMemory(device, drawnLastFrameSSBOMemory[0]);
-    //}
+    data = nullptr;
+    vkMapMemory(device, drawnLastFrameSSBOMemory, 0, chickenCount * sizeof(vk::Bool32), 0, &data);
+    memcpy(data, zerodVisibility.get(), chickenCount * sizeof(vk::Bool32));
+    vkUnmapMemory(device, drawnLastFrameSSBOMemory);
 }
 
 void VulkanObject::updateLODSSBO()
