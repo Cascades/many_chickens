@@ -186,8 +186,8 @@ private:
     std::vector<VkDeviceMemory> indirectLodCountSSBOMemory;
     std::vector<VkBuffer> lodConfigSSBO;
     std::vector<VkDeviceMemory> lodConfigSSBOMemory;
-    std::vector<VkBuffer> drawnLastFrameSSBO;
-    std::vector<VkDeviceMemory> drawnLastFrameSSBOMemory;
+    VkBuffer drawnLastFrameSSBO;
+    VkDeviceMemory drawnLastFrameSSBOMemory;
     std::vector<VkBuffer> sphereProjectionDebugSSBO;
     std::vector<VkDeviceMemory> sphereProjectionDebugSSBOMemory;
 
