@@ -942,6 +942,25 @@ uint32_t VulkanObject::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags
 
 // clean up swap chain for a clean recreate
 void VulkanObject::cleanupSwapChain() {
+    vkDestroyFramebuffer(device, offScreenPass.frameBuffer, nullptr);
+
+    vkDestroyImageView(device, offScreenPass.position.view, nullptr);
+    vkDestroyImage(device, offScreenPass.position.image, nullptr);
+    vkFreeMemory(device, offScreenPass.position.mem, nullptr);
+
+    vkDestroyImageView(device, offScreenPass.albedo.view, nullptr);
+    vkDestroyImage(device, offScreenPass.albedo.image, nullptr);
+    vkFreeMemory(device, offScreenPass.albedo.mem, nullptr);
+
+    vkDestroyImageView(device, offScreenPass.normal.view, nullptr);
+    vkDestroyImage(device, offScreenPass.normal.image, nullptr);
+    vkFreeMemory(device, offScreenPass.normal.mem, nullptr);
+
+    vkDestroyImageView(device, offScreenPass.depth.view, nullptr);
+    vkDestroyImage(device, offScreenPass.depth.image, nullptr);
+    vkFreeMemory(device, offScreenPass.depth.mem, nullptr);
+    vkDestroyRenderPass(device, offScreenPass.renderPass, nullptr);
+
     vkDestroyImageView(device, depthImageView, nullptr);
     vkDestroyImage(device, depthImage, nullptr);
     vkFreeMemory(device, depthImageMemory, nullptr);
@@ -1015,25 +1034,6 @@ void VulkanObject::cleanup() {
 
     // cleanup swap chain
     cleanupSwapChain();
-
-    vkDestroyFramebuffer(device, offScreenPass.frameBuffer, nullptr);
-
-    vkDestroyImageView(device, offScreenPass.position.view, nullptr);
-    vkDestroyImage(device, offScreenPass.position.image, nullptr);
-    vkFreeMemory(device, offScreenPass.position.mem, nullptr);
-
-    vkDestroyImageView(device, offScreenPass.albedo.view, nullptr);
-    vkDestroyImage(device, offScreenPass.albedo.image, nullptr);
-    vkFreeMemory(device, offScreenPass.albedo.mem, nullptr);
-
-    vkDestroyImageView(device, offScreenPass.normal.view, nullptr);
-    vkDestroyImage(device, offScreenPass.normal.image, nullptr);
-    vkFreeMemory(device, offScreenPass.normal.mem, nullptr);
-
-    vkDestroyImageView(device, offScreenPass.depth.view, nullptr);
-    vkDestroyImage(device, offScreenPass.depth.image, nullptr);
-    vkFreeMemory(device, offScreenPass.depth.mem, nullptr);
-    vkDestroyRenderPass(device, offScreenPass.renderPass, nullptr);
 
     vkDestroyFramebuffer(device, shadowPass.frameBuffer, nullptr);
 
@@ -1568,14 +1568,14 @@ uint32_t VulkanObject::getPow2Size(uint32_t width, uint32_t height)
 
 void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRenderPass& geometryPass)
 {
-    static bool firstRun = true;
+    //static bool firstRun = true;
     std::array<VkAttachmentDescription, 4> attachmentDescriptions{};
     std::array<VkImageView, 4> imageViews{};
 
     std::array<VkAttachmentReference, 2> colorAttachmentRefs{};
 
 	// color 1
-    if (firstRun)
+    if (clearAttachmentsOnLoad)
     {
         createImage(swapChainExtent.width,
             swapChainExtent.height,
@@ -1603,7 +1603,7 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
     colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     // color 2
-    if (firstRun)
+    if (clearAttachmentsOnLoad)
     {
         createImage(swapChainExtent.width,
             swapChainExtent.height,
@@ -1641,7 +1641,7 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
     attachmentDescriptions[2].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 	// depth
-    if (firstRun)
+    if (clearAttachmentsOnLoad)
     {
         uint32_t imageMaxSizePow2 = getPow2Size(swapChainExtent.width, swapChainExtent.height);
 
@@ -1656,6 +1656,8 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
             depthPyramidImage,
             depthPyramidMem,
             mipLevels);
+
+        depthPyramidViews.clear();
 
         for (size_t mipLevel = 0; mipLevel < mipLevels; ++mipLevel)
         {
@@ -1788,7 +1790,7 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
         throw std::runtime_error("failed to create render pass!");
     }
 
-    firstRun = false;
+    //firstRun = false;
 }
 
 void VulkanObject::createEarlyGeometryPass()
@@ -2135,6 +2137,8 @@ void VulkanObject::createDescriptorSets() {
         mc::DescriptorInfo<VkDescriptorImageInfo> depthDescriptorInfo{
             offScreenPass.depth.view,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+        depthPyramidDescriptorInfo.clear();
 
         for (size_t depthPyramidDepth = 0; depthPyramidDepth < depthPyramidViews.size(); ++depthPyramidDepth)
         {
