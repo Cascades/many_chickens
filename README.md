@@ -139,17 +139,17 @@ We make 4 samples, as each SSAABB, at a mip whose pixels are only just larger th
     <img src="./media/4_samples_example.png" />
 </p>
 
-# Discrete LOD
-
-This is a relatively simple algorithm. At the moment I use [meshoptimizer](https://github.com/zeux/meshoptimizer)'s `meshopt_simplify` to generate a single vertex buffer, and multiple index buffers for each of my LODs. Ina compute pass I then select which lod to draw based on the distance from the screen that the mesh exists at. 
-
-This would be better improvved by basing my LOD selection on something like size of mesh triangle in screen space, but that's for the future!
-
-# Demo media
-
-[Click the image to play!](https://youtu.be/GZQd4QkHUr4)
+[Here is a video of culling](https://youtu.be/GZQd4QkHUr4)
 
 [![Watch the video](https://img.youtube.com/vi/GZQd4QkHUr4/maxresdefault.jpg)](https://youtu.be/GZQd4QkHUr4)
+
+# Discrete LOD
+
+This is a relatively simple algorithm. At the moment I use [meshoptimizer](https://github.com/zeux/meshoptimizer)'s `meshopt_simplify` to generate a single vertex buffer, and multiple index buffers for each of my LODs. In a compute pass I then select which lod to draw based on the size of the mesh in screen space. I calculate this in the late pass of the culling algorithm above, and then write the LOD to select from to a buffer for the early pass to read from.
+
+[Here is a video of LOD + culling](https://youtu.be/TTz6j78JBPU)
+
+[![Watch the video](https://img.youtube.com/vi/TTz6j78JBPU/maxresdefault.jpg)](https://youtu.be/TTz6j78JBPU)
 
 [1]: https://medium.com/@mil_kru/two-pass-occlusion-culling-4100edcad501
 [2]: https://interplayoflight.wordpress.com/2017/11/15/experiments-in-gpu-based-occlusion-culling/
