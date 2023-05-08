@@ -104,6 +104,11 @@ layout(std430, binding = 9) buffer IndirectBufferCountBuffer
 	uint data;
 } indirectBufferCountBuffer;
 
+layout(std430, binding = 10) buffer PreviousFrameLODBuffer
+{
+	uint data[];
+} previousFrameLODBuffer;
+
 const vec4 color_mapping_5[5] = vec4[](vec4(1.0, 0.0, 0.0, 1.0),
                                        vec4(0.0, 1.0, 0.0, 1.0),
                                        vec4(0.0, 0.0, 1.0, 1.0),
@@ -191,24 +196,47 @@ float linearizeDepth(float z, float n, float f)
 //     uvec2(a, b)
 //     a: The number of indices
 //     b: The offset in to the index buffer
-uvec2 meshLODCalculation(vec4 mvPos)
+uvec2 meshLODCalculation(vec4 mvPos, vec4 aabb, bool new)
 {
-    float dist = length(mvPos);
-
     uint lod_index = lodConfigData.data.length();
 
-    for(uint curr_lod_index = 0; curr_lod_index < lodConfigData.data.length() - 1; ++curr_lod_index)
+    if (new)
     {
-        float curr_lod_max_dist = lodConfigData.data[curr_lod_index].maxDist;
-        float next_lod_max_dist = lodConfigData.data[curr_lod_index + 1].maxDist;
-        if(dist > curr_lod_max_dist && dist <= next_lod_max_dist)
-        {
-            lod_index = curr_lod_index + 1;
-            break;
-        }
-    }
+        float max_size = max(aabb[0] - aabb[2], aabb[1] - aabb[3]);
 
-    lod_index = min(lod_index, lodConfigData.data.length() - 1);
+        for(uint curr_lod_index = 0; curr_lod_index < 4; ++curr_lod_index)
+        {
+            float curr_lod_max_size = lodConfigData.data[curr_lod_index].maxDist;
+            float next_lod_max_size = lodConfigData.data[curr_lod_index + 1].maxDist;
+            if(max_size > curr_lod_max_size && max_size >= next_lod_max_size)
+            {
+                lod_index = curr_lod_index + 1;
+                break;
+            }
+        }
+
+        lod_index = min(lod_index, 4);
+        previousFrameLODBuffer.data[gl_GlobalInvocationID.x] = lod_index;
+    }
+    else
+    {
+        float dist = length(mvPos);
+
+        float lodConfigs[5] = float[5](0.0, 0.0, 2.2, 5.5, 50.0);
+
+        for(uint curr_lod_index = 0; curr_lod_index < lodConfigData.data.length() - 1; ++curr_lod_index)
+        {
+            float curr_lod_max_dist = lodConfigs[curr_lod_index];
+            float next_lod_max_dist = lodConfigs[curr_lod_index + 1];
+            if(dist > curr_lod_max_dist && dist <= next_lod_max_dist)
+            {
+                lod_index = curr_lod_index + 1;
+                break;
+            }
+        }
+
+        lod_index = min(lod_index, lodConfigData.data.length() - 1);
+    }
 
     return uvec2(lodConfigData.data[lod_index].size, lodConfigData.data[lod_index].offset);
 }
@@ -242,13 +270,11 @@ void early(vec4 mvPos)
 		return;
     }
 
-    uvec2 meshResults = meshLODCalculation(mvPos);
-
     uint drawBufferIdx = atomicAdd(indirectBufferCountBuffer.data, 1);
 
-    indirectBuffer.data[drawBufferIdx].indexCount = meshResults[0];
+    indirectBuffer.data[drawBufferIdx].indexCount = lodConfigData.data[previousFrameLODBuffer.data[gl_GlobalInvocationID.x]].size;
     indirectBuffer.data[drawBufferIdx].instanceCount = 1;
-    indirectBuffer.data[drawBufferIdx].firstIndex = meshResults[1];
+    indirectBuffer.data[drawBufferIdx].firstIndex = lodConfigData.data[previousFrameLODBuffer.data[gl_GlobalInvocationID.x]].offset;
     indirectBuffer.data[drawBufferIdx].vertexOffset = 0;
     indirectBuffer.data[drawBufferIdx].firstInstance = 0;
     indirectBuffer.data[drawBufferIdx].meshId = gl_GlobalInvocationID.x;
@@ -309,10 +335,9 @@ void late(vec4 mvPos)
     }
     else
     {
+        uvec2 meshResults = meshLODCalculation(mvPos, aabb, true);
         if (visible && !drawnLastFrameBuffer.data[gl_GlobalInvocationID.x])
         {
-            uvec2 meshResults = meshLODCalculation(mvPos);
-
             // For indirect draw buffer compaction we keep a count of all meshes which have been
             // drawn.
             uint drawBufferIdx = atomicAdd(indirectBufferCountBuffer.data, 1);
@@ -367,7 +392,7 @@ void main()
 
     if (ubo.display_mode == 25)
     {
-        uvec2 meshResults = meshLODCalculation(mvPos);
+        uvec2 meshResults = meshLODCalculation(mvPos, vec4(1.0), false);
 
         indirectBuffer.data[gl_GlobalInvocationID.x].indexCount = meshResults[0];
         indirectBuffer.data[gl_GlobalInvocationID.x].instanceCount = 1;
