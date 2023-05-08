@@ -689,6 +689,15 @@ void VulkanObject::createSSBOs() {
         drawnLastFrameSSBO,
         drawnLastFrameSSBOMemory);
 
+    bufferSize = modelTransforms->modelMatricies.size() * sizeof(uint32_t);
+
+    createBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        previousFrameLODSSBO,
+        previousFrameLODSSBOMemory);
+
     struct sphereProjectionDebugData
     {
         glm::vec4 aabb;
@@ -1018,6 +1027,8 @@ void VulkanObject::cleanupSwapChain() {
 
     vkDestroyBuffer(device, drawnLastFrameSSBO, nullptr);
     vkFreeMemory(device, drawnLastFrameSSBOMemory, nullptr);
+    vkDestroyBuffer(device, previousFrameLODSSBO, nullptr);
+    vkFreeMemory(device, previousFrameLODSSBOMemory, nullptr);
     vkDestroyBuffer(device, SSBO, nullptr);
     vkFreeMemory(device, SSBOMemory, nullptr);
     vkDestroyBuffer(device, scaleSSBO, nullptr);
@@ -2101,6 +2112,11 @@ void VulkanObject::createDescriptorSets() {
             0,
             modelTransforms->modelMatricies.size() * sizeof(uint32_t)};
 
+        mc::DescriptorInfo<VkDescriptorBufferInfo> previousFrameLODSsboInfo{
+            previousFrameLODSSBO,
+            0,
+            modelTransforms->modelMatricies.size() * sizeof(uint32_t) };
+
         mc::DescriptorInfo<VkDescriptorBufferInfo> sphereProjectionDebugSsboInfo{
             sphereProjectionDebugSSBO[i],
             0,
@@ -2163,7 +2179,7 @@ void VulkanObject::createDescriptorSets() {
             depthPyramidMultiMipView,
             VK_IMAGE_LAYOUT_GENERAL };
 
-        std::array<VkWriteDescriptorSet, 10> computeDescriptorWrites{};
+        std::array<VkWriteDescriptorSet, 11> computeDescriptorWrites{};
 
         computeDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         computeDescriptorWrites[0].dstSet = computeDescriptorSets[i];
@@ -2244,6 +2260,14 @@ void VulkanObject::createDescriptorSets() {
         computeDescriptorWrites[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         computeDescriptorWrites[9].descriptorCount = 1;
         computeDescriptorWrites[9].pBufferInfo = indirectSsboCountInfo.getPtr();
+
+        computeDescriptorWrites[10].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        computeDescriptorWrites[10].dstSet = computeDescriptorSets[i];
+        computeDescriptorWrites[10].dstBinding = 10;
+        computeDescriptorWrites[10].dstArrayElement = 0;
+        computeDescriptorWrites[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        computeDescriptorWrites[10].descriptorCount = 1;
+        computeDescriptorWrites[10].pBufferInfo = previousFrameLODSsboInfo.getPtr();
 
         vkUpdateDescriptorSets(
             device,
@@ -3542,17 +3566,17 @@ void VulkanObject::drawFrame() {
     auto& max_dists = dragon_model.getMaxDistances();
     if (ImGui::GetFrameCount() <= 3)
     {
-        max_dists[0] = 0.0f;
-        max_dists[1] = 0.0f;
-        max_dists[2] = 2.2f;
-        max_dists[3] = 5.5f;
-        max_dists[4] = 50.0f;
+        max_dists[0] = 1.0f;
+        max_dists[1] = 0.175f;
+        max_dists[2] = 0.05f;
+        max_dists[3] = 0.0f;
+        max_dists[4] = 0.0f;
     }
-    ImGui::SliderFloat("LOD level 0 max dist", &max_dists[0], 0.00f, 10000.0f);// max_dists[1]);
+    ImGui::SliderFloat("LOD level 0 max dist", &max_dists[0], 0.0f, 1.0f);// max_dists[1]);
     ImGui::SliderFloat("LOD level 1 max dist", &max_dists[1], max_dists[0], max_dists[2]);
     ImGui::SliderFloat("LOD level 2 max dist", &max_dists[2], max_dists[1], max_dists[3]);
     ImGui::SliderFloat("LOD level 3 max dist", &max_dists[3], max_dists[2], max_dists[4]);
-    ImGui::SliderFloat("LOD level 4 max dist", &max_dists[4], max_dists[3], 10000.0f);
+    ImGui::SliderFloat("LOD level 4 max dist", &max_dists[4], max_dists[3], 1.0f);
     ImGui::RadioButton("normals", &display_mode, 0);
     ImGui::RadioButton("depth", &display_mode, 1);
     ImGui::RadioButton("specularity", &display_mode, 2);
