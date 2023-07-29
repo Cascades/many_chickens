@@ -30,6 +30,12 @@ class Model
     std::vector<uint32_t> lod_indices_sizes;
     std::vector<float> lod_max_distances;
 
+    size_t max_meshlets;
+    std::vector<meshopt_Meshlet> meshlets;
+    std::vector<unsigned int> meshlet_vertices;
+    std::vector<unsigned char> meshlet_triangles;
+    std::vector<meshopt_Bounds> meshlet_bounds;
+
 public:
 
     float Ns;
@@ -156,6 +162,7 @@ public:
         std::cout << "MAX DISTTTTTT: " << maxDist << std::endl;
 
         generateLOD();
+        generateMeshlets();
     }
 
 	std::vector<Vertex> const& getVertices() const
@@ -280,5 +287,46 @@ private:
         lod_max_distances.back() = 50.0f;
 
         std::cout << "total indices: " << indices.size() << std::endl;;
+    }
+
+    void generateMeshlets()
+    {
+        const size_t max_vertices = 64;
+        const size_t max_triangles = 124;
+        const float cone_weight = 0.0f;
+
+        max_meshlets = meshopt_buildMeshletsBound(indices.size(), max_vertices, max_triangles);
+        meshlets.resize(max_meshlets);
+        meshlet_vertices.resize(max_meshlets * max_vertices);
+        meshlet_triangles.resize(max_meshlets * max_triangles * 3);
+
+        size_t meshlet_count = meshopt_buildMeshlets(meshlets.data(),
+                                                     meshlet_vertices.data(),
+                                                     meshlet_triangles.data(),
+                                                     indices.data(),
+                                                     indices.size(),
+                                                     &vertices[0].pos.x,
+                                                     vertices.size(),
+                                                     sizeof(Vertex),
+                                                     max_vertices,
+                                                     max_triangles,
+                                                     cone_weight);
+
+        meshlets.resize(meshlet_count);
+        meshlet_vertices.resize(meshlet_count * max_vertices);
+        meshlet_triangles.resize(meshlet_count * max_triangles * 3);
+        meshlet_bounds.resize(meshlet_count);
+
+        size_t meshletCount = 0;
+        for (const auto& m : meshlets)
+        {
+            meshlet_bounds[meshletCount] = meshopt_computeMeshletBounds(&meshlet_vertices[m.vertex_offset],
+                &meshlet_triangles[m.triangle_offset],
+                m.triangle_count,
+                &vertices[0].pos.x,
+                vertices.size(),
+                sizeof(Vertex));
+            ++meshletCount;
+        }
     }
 };
