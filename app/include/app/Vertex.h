@@ -10,10 +10,11 @@
 #include <vulkan/vulkan.hpp>
 
 struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
+    glm::vec4 pos;
+    glm::vec4 color;
+    glm::vec4 norm;
     glm::vec2 texCoord;
-    glm::vec3 norm;
+    glm::vec2 padding;
 
     static VkVertexInputBindingDescription getBindingDescription() {
         VkVertexInputBindingDescription bindingDescription{};

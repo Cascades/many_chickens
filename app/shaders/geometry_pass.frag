@@ -11,8 +11,6 @@ layout(location = 5) flat in uint ID;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outNormal;
 
-layout(binding = 1) uniform sampler2D texSampler;
-
 layout(std140, binding = 0) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
@@ -44,6 +42,8 @@ layout(std140, binding = 0) uniform UniformBufferObject {
 	int display_mode;
     int culling_updating;
 } ubo;
+
+layout(binding = 1) uniform sampler2D texSampler;
 
 struct SphereProjectionDebugData
 {

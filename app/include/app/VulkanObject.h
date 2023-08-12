@@ -132,6 +132,7 @@ private:
     // render pass object
     VkRenderPass renderPass;
     VkRenderPass earlyGeometryPass;
+    VkRenderPass earlyMeshletPass;
     VkRenderPass lateGeometryPass;
     VkRenderPass imgui_render_pass;
     //VkDescriptorSetLayout descriptorSetLayout;
@@ -139,11 +140,13 @@ private:
     //VkDescriptorSetLayout shadowSetLayout;
     std::shared_ptr<mc::ShaderProgram> computeProgram;
     std::shared_ptr<mc::ShaderProgram> depthPyramidComputeProgram;
+    std::shared_ptr<mc::ShaderProgram> meshletGeometryProgram;
     std::shared_ptr<mc::ShaderProgram> geometryProgram;
     std::shared_ptr<mc::ShaderProgram> lightingProgram;
     std::shared_ptr<mc::ShaderProgram> shadowProgram;
     VkPipeline computePipeline;
     VkPipeline depthPyramidComputePipeline;
+    VkPipeline meshGeometryPipeline;
     VkPipeline graphicsPipeline;
     VkPipeline lateGraphicsPipeline;
     VkPipeline lightingPipeline;
@@ -193,7 +196,17 @@ private:
     std::vector<VkBuffer> sphereProjectionDebugSSBO;
     std::vector<VkDeviceMemory> sphereProjectionDebugSSBOMemory;
 
-    static constexpr size_t chickenCount = 150000;// 50;
+    VkBuffer verticesSSBO;
+    VkDeviceMemory verticesSSBOMemory;
+    VkBuffer meshletsSSBO;
+    VkDeviceMemory meshletsSSBOMemory;
+    VkBuffer meshletVerticesSSBO;
+    VkDeviceMemory meshletVerticesSSBOMemory;
+    VkBuffer meshletIndicesSSBO;
+    VkDeviceMemory meshletIndicesSSBOMemory;
+
+
+    static constexpr size_t chickenCount = 1;// 50;
 
     float timestampPeriod = 1.0f;
 
@@ -205,6 +218,7 @@ private:
     std::unique_ptr<std::array<float, chickenCount>> modelScales;
 
     void createSSBOs();
+    void createMeshletSSBOs();
 
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
@@ -213,12 +227,14 @@ private:
     std::vector<VkDeviceMemory> shadowUniformBuffersMemory;
 
     VkDescriptorPool computeDescriptorPool;
+    VkDescriptorPool meshletDescriptorPool;
     VkDescriptorPool depthPyramidComputeDescriptorPool;
     VkDescriptorPool descriptorPool;
     VkDescriptorPool lightingDescriptorPool;
     VkDescriptorPool shadowDescriptorPool;
     std::vector<VkDescriptorSet> computeDescriptorSets;
     std::vector<VkDescriptorSet> depthPyramidComputeDescriptorSets;
+    std::vector<VkDescriptorSet> meshletGeometryDescriptorSets;
     std::vector<VkDescriptorSet> descriptorSets;
     std::vector<VkDescriptorSet> lightingDescriptorSets;
     std::vector<VkDescriptorSet> shadowDescriptorSets;
@@ -324,6 +340,8 @@ private:
         uint32_t mipLevels = 1);
 
     void createDescriptorPool();
+    void createLightingDescriptorPool();
+    void createMeshletDescriptorPools();
 
     void createQueryPools();
 
@@ -346,6 +364,8 @@ private:
     void createCommandPool(VkCommandPool* commandPool, VkCommandPoolCreateFlags flags);
 
     void createCommandBuffers(VkCommandBuffer* commandBuffer, uint32_t commandBufferCount, VkCommandPool& commandPool);
+
+    void createMeshletCommandBuffers();
 
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
@@ -381,15 +401,23 @@ private:
     // recreate swap chain incase it is invalidated
     void recreateSwapChain();
 
+    void createLightingDescriptorSets();
+
     void createDescriptorSets();
 
+    void createMeshletDescriptorSets();
+
     void createComputePipeline();
+
+    void createDeferredLightingPipeline();
 
     // create the graphics pipeline.
     void createGraphicsPipeline();
 
+    void createMeshShaderPipeline();
+
     // function to create all of our framebuffers
-    void createFramebuffers();
+    void createFramebuffers(VkRenderPass& renderPass);
 
     // create our command pool
     void createCommandPool();
@@ -404,6 +432,8 @@ private:
     void updateSSBO();
 
     void updateLODSSBO();
+
+    bool isValidationEnabled();
 
     uint32_t getPow2Size(uint32_t width, uint32_t height);
 
@@ -454,6 +484,7 @@ private:
 
         if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
         {
+            std::cerr << "[ERROR]" << std::endl;
             assert(false);
         }
 

@@ -101,7 +101,9 @@ float grid(vec2 fragCoord, float space, float gridWidth)
 
 void main()
 {
-    vec4 tmpOutFragColor;
+    outFragcolor = vec4(subpassLoad(inColor).rgb, 1.0);
+    //outFragcolor = vec4(inUV.x, inUV.y, inUV.x, 1.0);
+    /*vec4 tmpOutFragColor;
 
 	if(ubo.display_mode == 0)
 	{
@@ -285,5 +287,5 @@ void main()
             tmpOutFragColor.y,
             min(1.0, tmpOutFragColor.z + currentExtraBVal),
             tmpOutFragColor.w);
-	}
+	}*/
 }

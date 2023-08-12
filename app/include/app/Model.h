@@ -83,7 +83,8 @@ public:
                 vertex.pos = {
                     attrib.vertices[3 * index.vertex_index + 0] * 1.0,
                     attrib.vertices[3 * index.vertex_index + 1] * 1.0,
-                    attrib.vertices[3 * index.vertex_index + 2] * 1.0
+                    attrib.vertices[3 * index.vertex_index + 2] * 1.0,
+                    1.0
                 };
 
                 if (index.texcoord_index >= 0)
@@ -99,13 +100,14 @@ public:
                     vertex.texCoord = { 0, 0 };
                 }
 
-                vertex.color = { 1.0f, 1.0f, 1.0f };
+                vertex.color = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 
                 vertex.norm = {
                     attrib.normals[3 * index.normal_index + 0],
                     attrib.normals[3 * index.normal_index + 1],
-                    attrib.normals[3 * index.normal_index + 2]
+                    attrib.normals[3 * index.normal_index + 2],
+                    0.0
                 };
 
                 vertex.norm = glm::normalize(vertex.norm);
@@ -210,6 +212,22 @@ public:
         //return lod_indices[lod_level];
         return lod_indices_sizes[total_lod_levels - 1];
     }
+
+    std::vector<meshopt_Meshlet> const& getMeshlets() const
+    {
+        return meshlets;
+    }
+
+    std::vector<unsigned int> const& getMeshletVertices() const
+    {
+        return meshlet_vertices;
+    }
+
+    std::vector<unsigned char> const& getMeshletIndices() const
+    {
+        return meshlet_triangles;
+    }
+
 private:
     void generateLOD()
     {
@@ -312,10 +330,12 @@ private:
                                                      max_triangles,
                                                      cone_weight);
 
+        const meshopt_Meshlet& last = meshlets[meshlet_count - 1];
+
+        meshlet_vertices.resize(last.vertex_offset + last.vertex_count);
+        meshlet_triangles.resize(last.triangle_offset + ((last.triangle_count * 3 + 3) & ~3));
         meshlets.resize(meshlet_count);
-        meshlet_vertices.resize(meshlet_count * max_vertices);
-        meshlet_triangles.resize(meshlet_count * max_triangles * 3);
-        meshlet_bounds.resize(meshlet_count);
+        meshlet_bounds.resize(meshlets.size());
 
         size_t meshletCount = 0;
         for (const auto& m : meshlets)

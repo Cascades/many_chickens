@@ -31,6 +31,7 @@
 #include <unordered_map>
 #include <random>
 #include <numeric>
+#include <type_traits>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -62,16 +63,9 @@ const std::vector<const char*> validationLayers = {
 
 // a swap chain is set of framebuffers that can be swapped for added stability.
 const std::vector<const char*> deviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    VK_EXT_MESH_SHADER_EXTENSION_NAME
 };
-
-// below is a pre-processor directive which when a debug build is run, enables validation
-// (and when in any other build type, does not)
-#ifdef NDEBUG
-const bool enableValidationLayers = false;
-#else
-const bool enableValidationLayers = true;
-#endif
 
 // create debug messenger within VkInstance instance
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
@@ -135,6 +129,24 @@ void VulkanObject::createCommandPool(VkCommandPool* commandPool, VkCommandPoolCr
     }
 }
 
+bool VulkanObject::isValidationEnabled()
+{
+    // below is a pre-processor directive which when a debug build is run, enables validation
+// (and when in any other build type, does not)
+#ifdef NDEBUG
+    bool enableValidationLayers = false;
+#else
+    bool enableValidationLayers = true;
+#endif
+
+    //if (std::getenv("VK_INSTANCE_LAYERS"))
+    //{
+    //    enableValidationLayers = false;
+    //}
+
+    return enableValidationLayers;
+}
+
 void VulkanObject::createCommandBuffers(VkCommandBuffer* commandBuffer, uint32_t commandBufferCount, VkCommandPool& commandPool) {
     VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
     commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -170,13 +182,18 @@ void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> ca
     // create render pass object using previous information
     createRenderPass();
     createComputePipeline();
+
+    createMeshShaderPipeline();
+
     // create graphics pipeline
-    createGraphicsPipeline();
+    //createGraphicsPipeline();
+    createDeferredLightingPipeline();
     // create our command pool
     createCommandPool();
     createDepthResources();
     // function to create framebuffers and populate swapChainFramebuffers vector
-    createFramebuffers();
+    createFramebuffers(earlyMeshletPass);
+    //createFramebuffers(earlyGeometryPass);
 
     createQueryPools();
 
@@ -207,9 +224,14 @@ void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> ca
     createIndexBuffer();
     createUniformBuffers();
     createSSBOs();
+    createMeshletSSBOs();
     updateSSBO();
-    createDescriptorPool();
-    createDescriptorSets();
+    //createDescriptorPool();
+    createLightingDescriptorPool();
+    createMeshletDescriptorPools();
+    //createDescriptorSets();
+    createLightingDescriptorSets();
+    createMeshletDescriptorSets();
 
     VkDescriptorPoolSize imgui_pool_sizes[] =
     {
@@ -262,7 +284,8 @@ void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> ca
     createCommandBuffers(imgui_command_buffers.data(), static_cast<uint32_t>(imgui_command_buffers.size()), imgui_command_pool);
 
     // create command buffers
-    createCommandBuffers();
+    //createCommandBuffers();
+    createMeshletCommandBuffers();
     // create and set up semaphores and fences
     createSyncObjects();
 }
@@ -513,6 +536,33 @@ void VulkanObject::createImage(
     vkBindImageMemory(device, image, imageMemory, 0);
 }
 
+void VulkanObject::createLightingDescriptorPool()
+{
+    std::array<VkDescriptorPoolSize, 6> lightingPoolSizes{};
+    lightingPoolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    lightingPoolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size() * 20);
+    lightingPoolSizes[1].type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    lightingPoolSizes[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+    lightingPoolSizes[2].type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    lightingPoolSizes[2].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+    lightingPoolSizes[3].type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    lightingPoolSizes[3].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+    lightingPoolSizes[4].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    lightingPoolSizes[4].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+    lightingPoolSizes[5].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    lightingPoolSizes[5].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+    VkDescriptorPoolCreateInfo lightingPoolInfo{};
+    lightingPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    lightingPoolInfo.poolSizeCount = static_cast<uint32_t>(lightingPoolSizes.size());
+    lightingPoolInfo.pPoolSizes = lightingPoolSizes.data();
+    lightingPoolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+
+    if (vkCreateDescriptorPool(device, &lightingPoolInfo, nullptr, &lightingDescriptorPool) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create descriptor pool!");
+    }
+}
+
 void VulkanObject::createDescriptorPool() {
     std::array<VkDescriptorPoolSize, 1> computePoolSizes{};
     computePoolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -719,6 +769,45 @@ void VulkanObject::createSSBOs() {
     }
 }
 
+void VulkanObject::createMeshletSSBOs()
+{
+    VkDeviceSize bufferSize = sizeof(meshopt_Meshlet) * dragon_model.getMeshlets().size();
+
+    createBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        meshletsSSBO,
+        meshletsSSBOMemory);
+
+    bufferSize = sizeof(unsigned int) * dragon_model.getMeshletVertices().size();
+
+    createBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        meshletVerticesSSBO,
+        meshletVerticesSSBOMemory);
+
+    bufferSize = sizeof(unsigned char) * dragon_model.getMeshletIndices().size();
+
+    createBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        meshletIndicesSSBO,
+        meshletIndicesSSBOMemory);
+
+    bufferSize = sizeof(Vertex) * dragon_model.getVertices().size();
+
+    createBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        verticesSSBO,
+        verticesSSBOMemory);
+}
+
 void VulkanObject::createIndexBuffer() {
     VkDeviceSize bufferSize = sizeof(dragon_model.getIndices()[0]) * dragon_model.getIndices().size();
 
@@ -800,7 +889,7 @@ void VulkanObject::transitionImageLayout(VkImage image, VkFormat format, VkImage
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = 0;
 
-    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL || newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
         barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 
         if (hasStencilComponent(format)) {
@@ -831,6 +920,13 @@ void VulkanObject::transitionImageLayout(VkImage image, VkFormat format, VkImage
     else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
 
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
@@ -1034,6 +1130,13 @@ void VulkanObject::cleanupSwapChain() {
     vkDestroyBuffer(device, scaleSSBO, nullptr);
     vkFreeMemory(device, scaleSSBOMemory, nullptr);
 
+    vkDestroyBuffer(device, meshletsSSBO, nullptr);
+    vkFreeMemory(device, meshletsSSBOMemory, nullptr);
+    vkDestroyBuffer(device, meshletVerticesSSBO, nullptr);
+    vkFreeMemory(device, meshletVerticesSSBOMemory, nullptr);
+    vkDestroyBuffer(device, meshletIndicesSSBO, nullptr);
+    vkFreeMemory(device, meshletIndicesSSBOMemory, nullptr);
+
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 }
 
@@ -1121,7 +1224,7 @@ void VulkanObject::cleanup() {
     vkDestroyDevice(device, nullptr);
 
     // if we're using validation layers we will have to clean up debug messenger
-    if (enableValidationLayers) {
+    if (isValidationEnabled()) {
         // destroy debug messenger
         DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
     }
@@ -1142,7 +1245,7 @@ void VulkanObject::cleanup() {
 
 void VulkanObject::createInstance() {
     // if we want to enable validation AND we cant support all the layers we want
-    if (enableValidationLayers && !checkValidationLayerSupport()) {
+    if (isValidationEnabled() && !checkValidationLayerSupport()) {
         // throw an error
         throw std::runtime_error("validation layers requested, but not available!");
     }
@@ -1181,7 +1284,7 @@ void VulkanObject::createInstance() {
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
     // if we are using validation layers
-    if (enableValidationLayers) {
+    if (isValidationEnabled()) {
         // add count of validation layers to creatInfo as a uint32_t
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
         // get vector of validation layers as pointer to raw array of validation layer names
@@ -1227,7 +1330,7 @@ void VulkanObject::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateI
 
 void VulkanObject::setupDebugMessenger() {
     // if we arent using validation layers, return
-    if (!enableValidationLayers) return;
+    if (!isValidationEnabled()) return;
 
     // create a struct with debugger info in
     VkDebugUtilsMessengerCreateInfoEXT createInfo;
@@ -1342,13 +1445,19 @@ void VulkanObject::createLogicalDevice() {
     vulkan12Features.scalarBlockLayout = true;
     vulkan12Features.hostQueryReset = true;
 
+    VkPhysicalDeviceMeshShaderFeaturesEXT featuresMesh{};
+    featuresMesh.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+    featuresMesh.taskShader = true;
+    featuresMesh.meshShader = true;
+
     /*VkPhysicalDeviceHostQueryResetFeatures resetFeatures;
     resetFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES;
     resetFeatures.hostQueryReset = VK_TRUE;
     resetFeatures.pNext = nullptr;*/
 
-    VkPhysicalDeviceVulkan13Features vulkan13Features;
+    VkPhysicalDeviceVulkan13Features vulkan13Features{};
     vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    vulkan13Features.maintenance4 = true;
     //vulkan13Features.synchronization2 = true;
 
     // struct to hold device info
@@ -1365,7 +1474,8 @@ void VulkanObject::createLogicalDevice() {
     createInfo.pEnabledFeatures = &deviceFeatures;
     createInfo.pNext = &vulkan11Features;
     vulkan11Features.pNext = &vulkan12Features;
-    vulkan12Features.pNext = nullptr;//&resetFeatures;
+    vulkan12Features.pNext = &vulkan13Features;
+    vulkan13Features.pNext = &featuresMesh;//&resetFeatures;
     //vulkan12Features.pNext = &vulkan13Features;
 
     // number of extensions to enable
@@ -1374,7 +1484,7 @@ void VulkanObject::createLogicalDevice() {
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
     // if we are using validation layers
-    if (enableValidationLayers) {
+    if (isValidationEnabled()) {
         // number of layers to enable
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
         // array of layers to enable
@@ -1769,19 +1879,19 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
     // this is our subpass
     dependencies[0].dstSubpass = 0;
     // the operation to wait on before we can use image
-    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT;
     // no mask
     dependencies[0].srcAccessMask = 0;
     // operations which should wait on this subpass are the colour attachment
-    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT;
     dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     // implicit subpass before render pass
     dependencies[1].srcSubpass = 0;
     // this is our subpass
     dependencies[1].dstSubpass = 1;
-    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT;
     dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
     dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
@@ -1806,7 +1916,8 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
 
 void VulkanObject::createEarlyGeometryPass()
 {
-    createGeometryPass(true, earlyGeometryPass);
+    //createGeometryPass(true, earlyGeometryPass);
+    createGeometryPass(true, earlyMeshletPass);
 }
 void VulkanObject::createLateGeometryPass()
 {
@@ -1971,10 +2082,13 @@ void VulkanObject::recreateSwapChain() {
     createRenderPass();
     createComputePipeline();
     // create graphics pipeline
-    createGraphicsPipeline();
+    createMeshShaderPipeline();
+    //createGraphicsPipeline();
+    createDeferredLightingPipeline();
     createDepthResources();
     // create framebuffers
-    createFramebuffers();
+    createFramebuffers(earlyMeshletPass);
+    //createFramebuffers(earlyGeometryPass);
 
     imgui_frame_buffers.resize(swapChainImages.size());
 
@@ -1997,8 +2111,10 @@ void VulkanObject::recreateSwapChain() {
 
     createUniformBuffers();
     createSSBOs();
+    createMeshletSSBOs();
     updateSSBO();
-    createDescriptorPool();
+    createLightingDescriptorPool();
+    //createDescriptorPool();
 
     ImGui_ImplVulkan_SetMinImageCount(static_cast<uint32_t>(swapChainImages.size()));
 
@@ -2010,9 +2126,328 @@ void VulkanObject::recreateSwapChain() {
     imgui_command_buffers.resize(swapChainImageViews.size());
     createCommandBuffers(imgui_command_buffers.data(), static_cast<uint32_t>(imgui_command_buffers.size()), imgui_command_pool);
 
-    createDescriptorSets();
+    //createDescriptorSets();
+    createLightingDescriptorSets();
     // create command buffers
-    createCommandBuffers();
+    //createCommandBuffers();
+    createMeshletCommandBuffers();
+}
+
+void VulkanObject::createMeshletDescriptorPools() {
+    std::array<VkDescriptorPoolSize, 3> meshletPoolSizes{};
+    meshletPoolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    meshletPoolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+    meshletPoolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    meshletPoolSizes[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size() * 6);
+    meshletPoolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    meshletPoolSizes[2].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+    VkDescriptorPoolCreateInfo meshletPoolInfo{};
+    meshletPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    meshletPoolInfo.poolSizeCount = static_cast<uint32_t>(meshletPoolSizes.size());
+    meshletPoolInfo.pPoolSizes = meshletPoolSizes.data();
+    meshletPoolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+
+    if (vkCreateDescriptorPool(device, &meshletPoolInfo, nullptr, &meshletDescriptorPool) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create descriptor pool!");
+    }
+}
+
+void VulkanObject::createMeshletDescriptorSets()
+{
+    /*std::vector<VkDescriptorSetLayout> meshletsMeshLayouts(swapChainImages.size(), meshletGeometryProgram->getSetLayout());
+    VkDescriptorSetAllocateInfo meshletGeometryAllocInfo{};
+    meshletGeometryAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    meshletGeometryAllocInfo.descriptorPool = meshletDescriptorPool;
+    meshletGeometryAllocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+    meshletGeometryAllocInfo.pSetLayouts = meshletsMeshLayouts.data();
+
+    meshletGeometryDescriptorSets.resize(swapChainImages.size());
+    if (vkAllocateDescriptorSets(device, &meshletGeometryAllocInfo, meshletGeometryDescriptorSets.data()) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+    }
+
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        mc::DescriptorInfo<VkDescriptorBufferInfo> uboInfo{
+            uniformBuffers[i],
+            0,
+            sizeof(UniformBufferObject) };
+
+        mc::DescriptorInfo<VkDescriptorImageInfo> imageInfo{
+            textureSampler,
+            textureImageView,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> ssboInfo{
+            SSBO,
+            0,
+            sizeof(ModelTransforms) };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> sphereProjectionDebugSsboInfo{
+            sphereProjectionDebugSSBO[i],
+            0,
+            modelTransforms->modelMatricies.size() * sizeof(glm::vec4) };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletsInfo{
+            meshletsSSBO,
+            0,
+            sizeof(meshopt_Meshlet) * dragon_model.getMeshlets().size() };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletVerticsInfo{
+            meshletVerticesSSBO,
+            0,
+            sizeof(unsigned int) * dragon_model.getMeshletVertices().size() };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletIndicesInfo{
+            meshletIndicesSSBO,
+            0,
+            sizeof(unsigned char) * dragon_model.getMeshlets().size() };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> verticesInfo{
+            verticesSSBO,
+            0,
+            sizeof(Vertex) * dragon_model.getVertices().size() };
+
+        std::array<VkWriteDescriptorSet, 8> meshletGeometryDescriptorWrites{};
+
+        using bufferInfo = std::tuple<uint32_t, VkDescriptorType, std::variant<VkDescriptorBufferInfo*, VkDescriptorImageInfo*>>;
+
+        size_t idx = 0;
+        for (const auto& bufferToWrite : { bufferInfo{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uboInfo.getPtr()},
+            bufferInfo{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageInfo.getPtr()},
+            bufferInfo{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, ssboInfo.getPtr()},
+            bufferInfo{3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sphereProjectionDebugSsboInfo.getPtr()},
+            bufferInfo{4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletsInfo.getPtr()},
+            bufferInfo{5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletVerticsInfo.getPtr()},
+            bufferInfo{6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletIndicesInfo.getPtr()},
+            bufferInfo{7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, verticesInfo.getPtr()}})
+        {
+            meshletGeometryDescriptorWrites[idx].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            meshletGeometryDescriptorWrites[idx].dstSet = meshletGeometryDescriptorSets[i];
+            meshletGeometryDescriptorWrites[idx].dstBinding = std::get<0>(bufferToWrite);
+            meshletGeometryDescriptorWrites[idx].dstArrayElement = 0;
+            meshletGeometryDescriptorWrites[idx].descriptorType = std::get<1>(bufferToWrite);
+            meshletGeometryDescriptorWrites[idx].descriptorCount = 1;
+            const auto bufferVariant = std::get<2>(bufferToWrite);
+            if (std::holds_alternative<VkDescriptorBufferInfo*>(bufferVariant))
+            {
+                meshletGeometryDescriptorWrites[idx].pBufferInfo = std::get<VkDescriptorBufferInfo*>(bufferVariant);
+            }
+            else
+            {
+                meshletGeometryDescriptorWrites[idx].pImageInfo = std::get<VkDescriptorImageInfo*>(bufferVariant);
+            }
+            ++idx;
+        }
+
+        vkUpdateDescriptorSets(
+            device,
+            static_cast<uint32_t>(meshletGeometryDescriptorWrites.size()),
+            meshletGeometryDescriptorWrites.data(),
+            0,
+            nullptr);
+    }*/
+}
+
+void VulkanObject::createLightingDescriptorSets()
+{
+    std::vector<VkDescriptorSetLayout> lightingLayouts(swapChainImages.size(), lightingProgram->getSetLayout());
+    VkDescriptorSetAllocateInfo lightingAllocInfo{};
+    lightingAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    lightingAllocInfo.descriptorPool = lightingDescriptorPool;
+    lightingAllocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+    lightingAllocInfo.pSetLayouts = lightingLayouts.data();
+
+    lightingDescriptorSets.resize(swapChainImages.size());
+    if (vkAllocateDescriptorSets(device, &lightingAllocInfo, lightingDescriptorSets.data()) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+    }
+
+    std::vector<VkDescriptorSetLayout> meshletsMeshLayouts(swapChainImages.size(), meshletGeometryProgram->getSetLayout());
+    VkDescriptorSetAllocateInfo meshletGeometryAllocInfo{};
+    meshletGeometryAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    meshletGeometryAllocInfo.descriptorPool = meshletDescriptorPool;
+    meshletGeometryAllocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+    meshletGeometryAllocInfo.pSetLayouts = meshletsMeshLayouts.data();
+
+    meshletGeometryDescriptorSets.resize(swapChainImages.size());
+    if (vkAllocateDescriptorSets(device, &meshletGeometryAllocInfo, meshletGeometryDescriptorSets.data()) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+    }
+
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        mc::DescriptorInfo<VkDescriptorBufferInfo> uboInfo{
+            uniformBuffers[i],
+            0,
+            sizeof(UniformBufferObject) };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> sphereProjectionDebugSsboInfo{
+            sphereProjectionDebugSSBO[i],
+            0,
+            modelTransforms->modelMatricies.size() * sizeof(glm::vec4) };
+
+        mc::DescriptorInfo<VkDescriptorImageInfo> shadowImageInfo{
+            shadowPass.sampler,
+            shadowPass.depth.view,
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL };
+
+        mc::DescriptorInfo<VkDescriptorImageInfo> PCFShadowImageInfo{
+            shadowPass.pcfsampler,
+            shadowPass.depth.view,
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL };
+
+        mc::DescriptorInfo<VkDescriptorImageInfo> colorDescriptorInfo{
+            offScreenPass.albedo.view,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
+        mc::DescriptorInfo<VkDescriptorImageInfo> normalDescriptorInfo{
+            offScreenPass.normal.view,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
+        mc::DescriptorInfo<VkDescriptorImageInfo> depthDescriptorInfo{
+            offScreenPass.depth.view,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
+        mc::DescriptorInfo<VkDescriptorImageInfo> depthMultiMipDescriptorInfo{
+            depthNearestSampler,
+            depthPyramidMultiMipView,
+            VK_IMAGE_LAYOUT_GENERAL };
+
+        std::array<VkWriteDescriptorSet, 8> lightingDescriptorWrites{};
+
+        lightingDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lightingDescriptorWrites[0].dstSet = lightingDescriptorSets[i];
+        lightingDescriptorWrites[0].dstBinding = 0;
+        lightingDescriptorWrites[0].dstArrayElement = 0;
+        lightingDescriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        lightingDescriptorWrites[0].descriptorCount = 1;
+        lightingDescriptorWrites[0].pBufferInfo = uboInfo.getPtr();
+
+        lightingDescriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lightingDescriptorWrites[1].dstSet = lightingDescriptorSets[i];
+        lightingDescriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        lightingDescriptorWrites[1].descriptorCount = 1;
+        lightingDescriptorWrites[1].dstBinding = 1;
+        lightingDescriptorWrites[1].pImageInfo = colorDescriptorInfo.getPtr();
+
+        lightingDescriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lightingDescriptorWrites[2].dstSet = lightingDescriptorSets[i];
+        lightingDescriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        lightingDescriptorWrites[2].descriptorCount = 1;
+        lightingDescriptorWrites[2].dstBinding = 2;
+        lightingDescriptorWrites[2].pImageInfo = normalDescriptorInfo.getPtr();
+
+        lightingDescriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lightingDescriptorWrites[3].dstSet = lightingDescriptorSets[i];
+        lightingDescriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        lightingDescriptorWrites[3].descriptorCount = 1;
+        lightingDescriptorWrites[3].dstBinding = 4;
+        lightingDescriptorWrites[3].pImageInfo = depthDescriptorInfo.getPtr();
+
+        lightingDescriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lightingDescriptorWrites[4].dstSet = lightingDescriptorSets[i];
+        lightingDescriptorWrites[4].dstBinding = 5;
+        lightingDescriptorWrites[4].dstArrayElement = 0;
+        lightingDescriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        lightingDescriptorWrites[4].descriptorCount = 1;
+        lightingDescriptorWrites[4].pImageInfo = shadowImageInfo.getPtr();
+
+        lightingDescriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lightingDescriptorWrites[5].dstSet = lightingDescriptorSets[i];
+        lightingDescriptorWrites[5].dstBinding = 6;
+        lightingDescriptorWrites[5].dstArrayElement = 0;
+        lightingDescriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        lightingDescriptorWrites[5].descriptorCount = 1;
+        lightingDescriptorWrites[5].pImageInfo = PCFShadowImageInfo.getPtr();
+
+        lightingDescriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lightingDescriptorWrites[6].dstSet = lightingDescriptorSets[i];
+        lightingDescriptorWrites[6].dstBinding = 7;
+        lightingDescriptorWrites[6].dstArrayElement = 0;
+        lightingDescriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        lightingDescriptorWrites[6].descriptorCount = 1;
+        lightingDescriptorWrites[6].pImageInfo = depthMultiMipDescriptorInfo.getPtr();
+
+        lightingDescriptorWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lightingDescriptorWrites[7].dstSet = lightingDescriptorSets[i];
+        lightingDescriptorWrites[7].dstBinding = 8;
+        lightingDescriptorWrites[7].dstArrayElement = 0;
+        lightingDescriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        lightingDescriptorWrites[7].descriptorCount = 1;
+        lightingDescriptorWrites[7].pBufferInfo = sphereProjectionDebugSsboInfo.getPtr();
+
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(lightingDescriptorWrites.size()), lightingDescriptorWrites.data(), 0, nullptr);
+
+        mc::DescriptorInfo<VkDescriptorImageInfo> imageInfo{
+            textureSampler,
+            textureImageView,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> ssboInfo{
+            SSBO,
+            0,
+            sizeof(ModelTransforms) };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletsInfo{
+            meshletsSSBO,
+            0,
+            sizeof(meshopt_Meshlet) * dragon_model.getMeshlets().size() };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletVerticsInfo{
+            meshletVerticesSSBO,
+            0,
+            sizeof(unsigned int) * dragon_model.getMeshletVertices().size() };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletIndicesInfo{
+            meshletIndicesSSBO,
+            0,
+            sizeof(unsigned char) * dragon_model.getMeshlets().size() };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> verticesInfo{
+            verticesSSBO,
+            0,
+            sizeof(Vertex) * dragon_model.getVertices().size() };
+
+        std::array<VkWriteDescriptorSet, 8> meshletGeometryDescriptorWrites{};
+
+        using bufferInfo = std::tuple<uint32_t, VkDescriptorType, std::variant<VkDescriptorBufferInfo*, VkDescriptorImageInfo*>>;
+
+        size_t idx = 0;
+        for (const auto& bufferToWrite : {
+            bufferInfo{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uboInfo.getPtr()},
+            bufferInfo{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageInfo.getPtr()},
+            bufferInfo{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, ssboInfo.getPtr()},
+            bufferInfo{3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sphereProjectionDebugSsboInfo.getPtr()},
+            bufferInfo{4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletsInfo.getPtr()},
+            bufferInfo{5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletVerticsInfo.getPtr()},
+            bufferInfo{6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletIndicesInfo.getPtr()},
+            bufferInfo{7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, verticesInfo.getPtr()} })
+        {
+            meshletGeometryDescriptorWrites[idx].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            meshletGeometryDescriptorWrites[idx].dstSet = meshletGeometryDescriptorSets[i];
+            meshletGeometryDescriptorWrites[idx].dstBinding = std::get<0>(bufferToWrite);
+            meshletGeometryDescriptorWrites[idx].dstArrayElement = 0;
+            meshletGeometryDescriptorWrites[idx].descriptorType = std::get<1>(bufferToWrite);
+            meshletGeometryDescriptorWrites[idx].descriptorCount = 1;
+            const auto bufferVariant = std::get<2>(bufferToWrite);
+            if (std::holds_alternative<VkDescriptorBufferInfo*>(bufferVariant))
+            {
+                meshletGeometryDescriptorWrites[idx].pBufferInfo = std::get<VkDescriptorBufferInfo*>(bufferVariant);
+            }
+            else
+            {
+                meshletGeometryDescriptorWrites[idx].pImageInfo = std::get<VkDescriptorImageInfo*>(bufferVariant);
+            }
+            ++idx;
+        }
+
+        vkUpdateDescriptorSets(
+            device,
+            static_cast<uint32_t>(meshletGeometryDescriptorWrites.size()),
+            meshletGeometryDescriptorWrites.data(),
+            0,
+            nullptr);
+    }
 }
 
 void VulkanObject::createDescriptorSets() {
@@ -2438,11 +2873,384 @@ void VulkanObject::createComputePipeline()
     }
 }
 
+void VulkanObject::createMeshShaderPipeline()
+{
+    auto geometryMeshShaderModule = std::make_shared<mc::Shader>(
+        device,
+        "../shaders/vulkan3/meshlet_mesh.spv",
+        VK_SHADER_STAGE_MESH_BIT_EXT);
+    auto geometryFragShaderModule = std::make_shared<mc::Shader>(
+        device,
+        "../shaders/vulkan3/meshlet_mesh_frag.spv",
+        VK_SHADER_STAGE_FRAGMENT_BIT);
+    meshletGeometryProgram = std::make_shared<mc::ShaderProgram>(device, mc::Shaders{ geometryMeshShaderModule, geometryFragShaderModule });
+
+    VkPipelineShaderStageCreateInfo meshShaderStageInfo{};
+    // assign it's type
+    meshShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    // assign fragment shader to it's stage
+    meshShaderStageInfo.stage = VK_SHADER_STAGE_MESH_BIT_EXT;
+    // add the shader code
+    meshShaderStageInfo.module = geometryMeshShaderModule->get();
+    // add standard name
+    meshShaderStageInfo.pName = "main";
+
+    // create a shader stage info struct for the fragment shader
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    // assign it's type
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    // assign fragment shader to it's stage
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    // add the shader code
+    fragShaderStageInfo.module = geometryFragShaderModule->get();
+    // add standard name
+    fragShaderStageInfo.pName = "main";
+
+    // an array which contains both shaders for convenience
+    VkPipelineShaderStageCreateInfo shaderStages[] = { meshShaderStageInfo, fragShaderStageInfo };
+
+    // a struct to store information about vertex data we will be passing to the vertex shader
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    // set type of struct
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    // for now, this data is hard coded
+
+    // create struct to describe how geometry should be drawn. Points, lines, strips, etc.
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    // assign struct type
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    // assign drawing type
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    // struct to describe region to be rendered to
+    VkViewport viewport{};
+    // position in window
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    // width and height in window
+    viewport.width = (float)swapChainExtent.width;
+    viewport.height = (float)swapChainExtent.height;
+    // range of depth values to use
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    // struct to describe scissor rectangle (for cropping the output without transforming)
+    VkRect2D scissor{};
+    // position in window
+    scissor.offset = { 0, 0 };
+    // width and ehight
+    scissor.extent = swapChainExtent;
+
+    // create viewport state struct as a combination of viewport and scissor
+    VkPipelineViewportStateCreateInfo viewportState{};
+    // assign type
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    // assign viewport count
+    viewportState.viewportCount = 1;
+    // set the viewport to be our previously created viewport
+    viewportState.pViewports = &viewport;
+    // assign scissor count
+    viewportState.scissorCount = 1;
+    // set the scissor rectangle to be our previously created scissor rectangle
+    viewportState.pScissors = &scissor;
+
+    // create struct describing the rasteriser (i will spell it english-style!)
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    // assign type
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    // fragments beyond the near and far plane are not clamped as opposed to deleted
+    rasterizer.depthClampEnable = VK_FALSE;
+    // we want output data from the rasteriser, so we set this false
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    // we are filling polygons we draw (so generating fragments within boundaries
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    // set the width of our boundary lines
+    rasterizer.lineWidth = 1.0f;
+    // we will be culling the back faces
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    // we consider vertex order to be clockwise and front facing
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    // no shadow mapping, no need for depth biasing
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    // used for anti-aliasing. struct to store info on multisampling
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    // assign struct type
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    // we disable it
+    multisampling.sampleShadingEnable = VK_FALSE;
+    // one 1 sample count
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // colour blend state per attached frame buffer
+    std::array<VkPipelineColorBlendAttachmentState, 2> colorBlendAttachments{};
+    // blend RGBA
+    colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    // disable
+    colorBlendAttachments[0].blendEnable = VK_FALSE;
+    // blend RGBA
+    colorBlendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    // disable
+    colorBlendAttachments[1].blendEnable = VK_FALSE;
+
+    // used for all framebuffers. allows setting of blend constants that can be used as blend factors.
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    // assign type
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    // disable logicOp
+    colorBlending.logicOpEnable = VK_FALSE;
+    // bitwise operation specified here
+    colorBlending.logicOp = VK_LOGIC_OP_COPY;
+    // number of attachments
+    colorBlending.attachmentCount = static_cast<uint32_t>(colorBlendAttachments.size());
+    // set as previously defined attachment
+    colorBlending.pAttachments = colorBlendAttachments.data();
+    // blend constants
+    colorBlending.blendConstants[0] = 0.0f;
+    colorBlending.blendConstants[1] = 0.0f;
+    colorBlending.blendConstants[2] = 0.0f;
+    colorBlending.blendConstants[3] = 0.0f;
+
+    // create pipeline info struct
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    // assign type
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    // set number of pipeline stages (vertex and fragment in this case)
+    pipelineInfo.stageCount = 2;
+    // assign list of stages
+    pipelineInfo.pStages = shaderStages;
+    // assign viewport data info
+    pipelineInfo.pViewportState = &viewportState;
+    // assign rasteriser info
+    pipelineInfo.pRasterizationState = &rasterizer;
+    // assign multisampling info
+    pipelineInfo.pMultisampleState = &multisampling;
+    // assign colour blend info
+    pipelineInfo.pColorBlendState = &colorBlending;
+    // assign layout (for passing uniforms)
+    pipelineInfo.layout = meshletGeometryProgram->getLayout();
+    // assign renderpass
+    pipelineInfo.renderPass = earlyMeshletPass;
+    // number of subpasses
+    pipelineInfo.subpass = 0;
+    // we wont fail, so NULL
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.minDepthBounds = 0.0f;
+    depthStencil.maxDepthBounds = 1.0f;
+    depthStencil.stencilTestEnable = VK_FALSE;
+    depthStencil.front = {};
+    depthStencil.back = {};
+
+    pipelineInfo.pDepthStencilState = &depthStencil;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &meshGeometryPipeline) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create graphics pipeline!");
+    }
+}
+
+void VulkanObject::createDeferredLightingPipeline()
+{
+    // create shader module per shader
+    auto lightingVertShaderModule = std::make_shared< mc::Shader>(device, "../shaders/vulkan3/lighting_pass_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+    auto lightingFragShaderModule = std::make_shared< mc::Shader>(device, "../shaders/vulkan3/lighting_pass_frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    lightingProgram = std::make_shared<mc::ShaderProgram>(device, mc::Shaders{ lightingVertShaderModule, lightingFragShaderModule });
+
+    // create a shader stage info struct for the vertex shader
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    // assign it's type
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    // assign vertex shader to it's stage
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    // add the shader code
+    vertShaderStageInfo.module = lightingVertShaderModule->get();
+    // add standard name
+    vertShaderStageInfo.pName = "main";
+
+    // create a shader stage info struct for the fragment shader
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    // assign it's type
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    // assign fragment shader to it's stage
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    // add the shader code
+    fragShaderStageInfo.module = lightingFragShaderModule->get();
+    // add standard name
+    fragShaderStageInfo.pName = "main";
+
+    // an array which contains both shaders for convenience
+    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+    // a struct to store information about vertex data we will be passing to the vertex shader
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    // set type of struct
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    // for now, this data is hard coded
+
+    auto bindingDescription = Vertex::getBindingDescription();
+    auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+    vertexInputInfo.vertexBindingDescriptionCount = 0;
+    vertexInputInfo.vertexAttributeDescriptionCount = 0;
+    vertexInputInfo.pVertexBindingDescriptions = nullptr;
+    vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+
+    // create struct to describe how geometry should be drawn. Points, lines, strips, etc.
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    // assign struct type
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    // assign drawing type
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    // we dont intend on splitting geometry up with special operations
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    // struct to describe region to be rendered to
+    VkViewport viewport{};
+    // position in window
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    // width and height in window
+    viewport.width = (float)swapChainExtent.width;
+    viewport.height = (float)swapChainExtent.height;
+    // range of depth values to use
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    // struct to describe scissor rectangle (for cropping the output without transforming)
+    VkRect2D scissor{};
+    // position in window
+    scissor.offset = { 0, 0 };
+    // width and ehight
+    scissor.extent = swapChainExtent;
+
+    // create viewport state struct as a combination of viewport and scissor
+    VkPipelineViewportStateCreateInfo viewportState{};
+    // assign type
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    // assign viewport count
+    viewportState.viewportCount = 1;
+    // set the viewport to be our previously created viewport
+    viewportState.pViewports = &viewport;
+    // assign scissor count
+    viewportState.scissorCount = 1;
+    // set the scissor rectangle to be our previously created scissor rectangle
+    viewportState.pScissors = &scissor;
+
+    // create struct describing the rasteriser (i will spell it english-style!)
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    // assign type
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    // fragments beyond the near and far plane are not clamped as opposed to deleted
+    rasterizer.depthClampEnable = VK_FALSE;
+    // we want output data from the rasteriser, so we set this false
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    // we are filling polygons we draw (so generating fragments within boundaries
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    // set the width of our boundary lines
+    rasterizer.lineWidth = 1.0f;
+    // we will be culling the back faces
+    rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
+    // we consider vertex order to be clockwise and front facing
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    // no shadow mapping, no need for depth biasing
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    // used for anti-aliasing. struct to store info on multisampling
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    // assign struct type
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    // we disable it
+    multisampling.sampleShadingEnable = VK_FALSE;
+    // one 1 sample count
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // colour blend state per attached frame buffer
+    std::array<VkPipelineColorBlendAttachmentState, 2> colorBlendAttachments{};
+    // blend RGBA
+    colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    // disable
+    colorBlendAttachments[0].blendEnable = VK_FALSE;
+    // blend RGBA
+    colorBlendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    // disable
+    colorBlendAttachments[1].blendEnable = VK_FALSE;
+
+    // used for all framebuffers. allows setting of blend constants that can be used as blend factors.
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    // assign type
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    // disable logicOp
+    colorBlending.logicOpEnable = VK_FALSE;
+    // bitwise operation specified here
+    colorBlending.logicOp = VK_LOGIC_OP_COPY;
+    // number of attachments
+    colorBlending.attachmentCount = 1;
+    // set as previously defined attachment
+    colorBlending.pAttachments = &colorBlendAttachments[0];
+    // blend constants
+    colorBlending.blendConstants[0] = 0.0f;
+    colorBlending.blendConstants[1] = 0.0f;
+    colorBlending.blendConstants[2] = 0.0f;
+    colorBlending.blendConstants[3] = 0.0f;
+
+    // create pipeline info struct
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    // assign type
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    // set number of pipeline stages (vertex and fragment in this case)
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    // assign layout (for passing uniforms)
+    pipelineInfo.layout = lightingProgram->getLayout();
+    // assign renderpass
+    pipelineInfo.renderPass = earlyMeshletPass;
+    // number of subpasses
+    pipelineInfo.subpass = 1;
+    // we wont fail, so NULL
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+    // assign vertex input info
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    // assign input assembly info
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    // assign viewport data info
+    pipelineInfo.pViewportState = &viewportState;
+    // assign rasteriser info
+    pipelineInfo.pRasterizationState = &rasterizer;
+    // assign multisampling info
+    pipelineInfo.pMultisampleState = &multisampling;
+    // assign colour blend info
+    pipelineInfo.pColorBlendState = &colorBlending;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.minDepthBounds = 0.0f;
+    depthStencil.maxDepthBounds = 1.0f;
+    depthStencil.stencilTestEnable = VK_FALSE;
+    depthStencil.front = {};
+    depthStencil.back = {};
+
+    pipelineInfo.pDepthStencilState = &depthStencil;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &lightingPipeline) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create graphics pipeline!");
+    }
+}
+
 // create the graphics pipeline.
 void VulkanObject::createGraphicsPipeline() {
     // create shader module per shader
-    auto geometryVertShaderModule = std::make_shared< mc::Shader>(device, "../shaders/vulkan3/geometry_pass_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-    auto geometryFragShaderModule = std::make_shared< mc::Shader>(device, "../shaders/vulkan3/geometry_pass_frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    auto geometryVertShaderModule = std::make_shared<mc::Shader>(device, "../shaders/vulkan3/geometry_pass_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+    auto geometryFragShaderModule = std::make_shared<mc::Shader>(device, "../shaders/vulkan3/geometry_pass_frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
     geometryProgram = std::make_shared<mc::ShaderProgram>(device, mc::Shaders{geometryVertShaderModule, geometryFragShaderModule});
 
     // create a shader stage info struct for the vertex shader
@@ -2754,7 +3562,7 @@ void VulkanObject::createGraphicsPipeline() {
 }
 
 // function to create all of our framebuffers
-void VulkanObject::createFramebuffers() {
+void VulkanObject::createFramebuffers(VkRenderPass& renderPass) {
     // resize our vector to be of adaqute size
     swapChainFramebuffers.resize(swapChainImageViews.size());
 
@@ -2772,7 +3580,7 @@ void VulkanObject::createFramebuffers() {
         // type of struct
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         // specify our render pass data
-        framebufferInfo.renderPass = earlyGeometryPass;
+        framebufferInfo.renderPass = renderPass;//earlyMeshletPass;//earlyGeometryPass;
         // our attament count
         framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
         // our attachment
@@ -2940,6 +3748,7 @@ void VulkanObject::createCommandBuffers() {
             0,
             0);
 
+        
         // EARLY CULLING PASS COMPUTE SHADER BEGIN
         {
             std::array<float, 4> labelCol = {1.0f, 0.2f, 0.2f, 1.0f};
@@ -2970,38 +3779,6 @@ void VulkanObject::createCommandBuffers() {
             endLableRegion();
         }
         // EARLY CULLING PASS COMPUTE SHADER END
-
-        /*VkRenderPassBeginInfo shadowRenderPassInfo{};
-        shadowRenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-
-        shadowRenderPassInfo.renderPass = shadowPass.renderPass;
-        // assign the current framebuffer
-        shadowRenderPassInfo.framebuffer = shadowPass.frameBuffer;
-        // screen space offset
-        shadowRenderPassInfo.renderArea.offset = { 0, 0 };
-        // width and height of render
-        shadowRenderPassInfo.renderArea.extent = swapChainExtent;
-
-        std::array<VkClearValue, 1> shadowClearValues{};
-        shadowClearValues[0].depthStencil = { 1.0f, 0 };
-
-        // number of clear colour
-        shadowRenderPassInfo.clearValueCount = static_cast<uint32_t>(shadowClearValues.size());
-        // clear colour value
-        shadowRenderPassInfo.pClearValues = shadowClearValues.data();
-
-        vkCmdBeginRenderPass(commandBuffers[i], &shadowRenderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
-
-        vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowProgram->getLayout(), 0, 1, &shadowDescriptorSets[i], 0, nullptr);
-
-        vkCmdDrawIndexedIndirect(commandBuffers[i], indirectLodSSBO[i], 0, modelTransforms->modelMatricies.size(), 32);
-
-        vkCmdEndRenderPass(commandBuffers[i]);*/
 
         std::array<VkImageMemoryBarrier, 1> renderPassOutputFormatConversions{};
         renderPassOutputFormatConversions[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -3458,6 +4235,166 @@ void VulkanObject::createCommandBuffers() {
             0,
             0,
             0);
+
+        // finish recording commands
+        // if fails
+        if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+            // throw error
+            throw std::runtime_error("failed to record command buffer!");
+        }
+    }
+}
+
+// create command buffers
+void VulkanObject::createMeshletCommandBuffers() {
+    // resize vector to store all command buffers
+    commandBuffers.resize(swapChainFramebuffers.size());
+
+    // struct to specify how to generate command buffers and fill command pool
+    VkCommandBufferAllocateInfo allocInfo{};
+    // struct type
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    // specify our command pool for storage
+    allocInfo.commandPool = commandPool;
+    // can be submitted to a queue directly
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    // number of command buffers to generate
+    allocInfo.commandBufferCount = (uint32_t)commandBuffers.size();
+
+    // create command buffers
+    // if fails
+    if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
+        // throw error
+        throw std::runtime_error("failed to allocate command buffers!");
+    }
+
+    transitionImageLayout(depthPyramidImage, VK_FORMAT_R32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    transitionImageLayout(meshesDrawnDebugViewImage, VK_FORMAT_R32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    transitionImageLayout(shadowPass.depth.image, VK_FORMAT_R32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+
+    VkBuffer vertexBuffers[] = { vertexBuffer };
+    VkDeviceSize offsets[] = { 0 };
+
+    PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT = (PFN_vkCmdDrawMeshTasksEXT)vkGetInstanceProcAddr(instance, "vkCmdDrawMeshTasksEXT");
+
+    // for each command buffer generated
+    for (size_t i = 0; i < commandBuffers.size(); i++) {
+        uint32_t queryPoolIndex = 0;
+
+        auto beginLableRegion = [&](std::string_view labelName, std::span<float, 4> color)
+        {
+            PFN_vkCmdBeginDebugUtilsLabelEXT pfnCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT");
+
+            if (!pfnCmdBeginDebugUtilsLabelEXT)
+            {
+                return;
+            }
+
+            VkDebugUtilsLabelEXT label{};
+            label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+            label.pNext = nullptr;
+            label.pLabelName = labelName.data();
+            label.color[0] = color[0];
+            label.color[1] = color[1];
+            label.color[2] = color[2];
+            label.color[3] = color[3];
+            pfnCmdBeginDebugUtilsLabelEXT(commandBuffers[i], &label);
+        };
+
+        auto endLableRegion = [&]()
+        {
+            PFN_vkCmdEndDebugUtilsLabelEXT pfnCmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT");
+
+            if (!pfnCmdEndDebugUtilsLabelEXT)
+            {
+                return;
+            }
+
+            pfnCmdEndDebugUtilsLabelEXT(commandBuffers[i]);
+        };
+
+        // specify some info about the usage of this command buffer
+        VkCommandBufferBeginInfo beginInfo{};
+        // assign struct type
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+        // create initial command buffer
+        // if fails
+        if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
+            // throw error
+            throw std::runtime_error("failed to begin recording command buffer!");
+        }
+
+        vkCmdResetQueryPool(commandBuffers[i], queryPools[i], 0, 50);
+
+        {
+            std::array<float, 4> labelCol = { 0.4f, 0.4f, 1.0f, 1.0f };
+            beginLableRegion("Early render", labelCol);
+            VkRenderPassBeginInfo renderPassInfo{};
+            renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassInfo.renderPass = earlyMeshletPass;
+            renderPassInfo.framebuffer = swapChainFramebuffers[i];
+            renderPassInfo.renderArea.offset = { 0, 0 };
+            renderPassInfo.renderArea.extent = swapChainExtent;
+
+            std::array<VkClearValue, 4> clearValues{};
+            clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[1].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[2].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[3].depthStencil = { 1.0f, 0 };
+
+            renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+            renderPassInfo.pClearValues = clearValues.data();
+
+            earlyRenderQueryIndices.first = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
+            vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, meshGeometryPipeline);
+
+            vkCmdBindDescriptorSets(
+                commandBuffers[i],
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                meshletGeometryProgram->getLayout(),
+                0,
+                1,
+                &meshletGeometryDescriptorSets[i],
+                0,
+                nullptr);
+
+            // Draw meshlets
+            //vkCmdDrawMeshTasksEXT(commandBuffers[i], dragon_model.getMeshlets().size() * chickenCount, 1, 1);
+
+            vkCmdDrawMeshTasksEXT(commandBuffers[i], dragon_model.getMeshlets().size() * chickenCount, 1, 1);
+
+            vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
+
+            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline);
+
+            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingProgram->getLayout(), 0, 1, &lightingDescriptorSets[i], 0, nullptr);
+
+            vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+
+            vkCmdEndRenderPass(commandBuffers[i]);
+
+            earlyRenderQueryIndices.second = queryPoolIndex;
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+
+            endLableRegion();
+        }
+
+        vkCmdPipelineBarrier(
+            commandBuffers[i],
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_DEPENDENCY_BY_REGION_BIT,
+            0,
+            nullptr,
+            0,
+            nullptr,
+            0,
+            nullptr);
 
         // finish recording commands
         // if fails
@@ -4224,6 +5161,26 @@ void VulkanObject::updateSSBO() {
     vkMapMemory(device, drawnLastFrameSSBOMemory, 0, chickenCount * sizeof(vk::Bool32), 0, &data);
     memcpy(data, zerodVisibility.get(), chickenCount * sizeof(vk::Bool32));
     vkUnmapMemory(device, drawnLastFrameSSBOMemory);
+
+    data = nullptr;
+    vkMapMemory(device, meshletsSSBOMemory, 0, sizeof(meshopt_Meshlet) * dragon_model.getMeshlets().size(), 0, &data);
+    memcpy(data, dragon_model.getMeshlets().data(), sizeof(meshopt_Meshlet) * dragon_model.getMeshlets().size());
+    vkUnmapMemory(device, meshletsSSBOMemory);
+
+    data = nullptr;
+    vkMapMemory(device, meshletVerticesSSBOMemory, 0, sizeof(unsigned int) * dragon_model.getMeshletVertices().size(), 0, &data);
+    memcpy(data, dragon_model.getMeshletVertices().data(), sizeof(unsigned int) * dragon_model.getMeshletVertices().size());
+    vkUnmapMemory(device, meshletVerticesSSBOMemory);
+
+    data = nullptr;
+    vkMapMemory(device, meshletIndicesSSBOMemory, 0, sizeof(unsigned char) * dragon_model.getMeshletIndices().size(), 0, &data);
+    memcpy(data, dragon_model.getMeshletIndices().data(), sizeof(unsigned char) * dragon_model.getMeshletIndices().size());
+    vkUnmapMemory(device, meshletIndicesSSBOMemory);
+
+    data = nullptr;
+    vkMapMemory(device, verticesSSBOMemory, 0, sizeof(Vertex) * dragon_model.getVertices().size(), 0, &data);
+    memcpy(data, dragon_model.getVertices().data(), sizeof(Vertex) * dragon_model.getVertices().size());
+    vkUnmapMemory(device, verticesSSBOMemory);
 }
 
 void VulkanObject::updateLODSSBO()
@@ -4387,6 +5344,12 @@ bool VulkanObject::isDeviceSuitable(VkPhysicalDevice device) {
     VkPhysicalDeviceFeatures supportedFeatures;
     vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
 
+    std::cout << indices.isComplete() << std::endl;
+    std::cout << extensionsSupported << std::endl;
+    std::cout << swapChainAdequate << std::endl;
+    std::cout << supportedFeatures.samplerAnisotropy << std::endl;
+    std::cout << supportedFeatures.multiDrawIndirect << std::endl;
+
     // if we have all queues, extension support and swap chain support
     return indices.isComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy && supportedFeatures.multiDrawIndirect;
 }
@@ -4420,6 +5383,12 @@ bool VulkanObject::checkDeviceExtensionSupport(VkPhysicalDevice device) {
     }
 
     //assert(debug_markers_present);
+
+    std::cerr << "Missing required extensions:" << std::endl;
+    for (const auto& s : requiredExtensions)
+    {
+        std::cerr << "|_ " << s << std::endl;
+    }
 
     // return true iff all supported
     return requiredExtensions.empty();
@@ -4485,7 +5454,7 @@ std::vector<const char*> VulkanObject::getRequiredExtensions() {
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
     // is we have enabled validation layers (debug)
-    if (enableValidationLayers) {
+    if (isValidationEnabled()) {
         // add VK_EXT_DEBUG_UTILS_EXTENSION_NAME extension
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }

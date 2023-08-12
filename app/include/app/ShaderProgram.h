@@ -73,6 +73,9 @@ namespace mc
 					{
 						if (resourceMask & (1 << i))
 						{
+							const auto resourceType = resourceTypes[i];
+							const auto shaderResourceTypes = shader->getResourceTypes();
+							const auto shaderResourceType = shader->getResourceTypes()[i];
 							assert(resourceTypes[i] == shader->getResourceTypes()[i]);
 						}
 						else
