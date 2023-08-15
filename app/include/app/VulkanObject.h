@@ -205,8 +205,9 @@ private:
     VkBuffer meshletIndicesSSBO;
     VkDeviceMemory meshletIndicesSSBOMemory;
 
+    bool meshShadingSupported = true;
 
-    static constexpr size_t chickenCount = 1;// 50;
+    static constexpr size_t chickenCount = 50;
 
     float timestampPeriod = 1.0f;
 

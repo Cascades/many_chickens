@@ -267,7 +267,6 @@ private:
                     0,
                     &lod_error));
 
-            /*
             std::cout << std::format("| {:^9} | {:.7f} | {:>18} | {:.10f} | {:>15} | {:.7f} |",
                 lod_index,
                 threshold,
@@ -275,7 +274,6 @@ private:
                 target_error,
                 lod_indices[lod_index].size(),
                 lod_error) << std::endl;
-            */
         }
 
         /*
@@ -310,7 +308,7 @@ private:
     void generateMeshlets()
     {
         const size_t max_vertices = 64;
-        const size_t max_triangles = 124;
+        const size_t max_triangles = 64;
         const float cone_weight = 0.0f;
 
         max_meshlets = meshopt_buildMeshletsBound(indices.size(), max_vertices, max_triangles);
@@ -318,17 +316,19 @@ private:
         meshlet_vertices.resize(max_meshlets * max_vertices);
         meshlet_triangles.resize(max_meshlets * max_triangles * 3);
 
+        const auto lodConfigData = getLodConfigData();
+
         size_t meshlet_count = meshopt_buildMeshlets(meshlets.data(),
-                                                     meshlet_vertices.data(),
-                                                     meshlet_triangles.data(),
-                                                     indices.data(),
-                                                     indices.size(),
-                                                     &vertices[0].pos.x,
-                                                     vertices.size(),
-                                                     sizeof(Vertex),
-                                                     max_vertices,
-                                                     max_triangles,
-                                                     cone_weight);
+            meshlet_vertices.data(),
+            meshlet_triangles.data(),
+            &indices[lodConfigData[0].offset],
+            lodConfigData[0].size,
+            &vertices[0].pos.x,
+            vertices.size(),
+            sizeof(Vertex),
+            max_vertices,
+            max_triangles,
+            cone_weight);
 
         const meshopt_Meshlet& last = meshlets[meshlet_count - 1];
 

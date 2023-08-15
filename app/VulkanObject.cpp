@@ -771,41 +771,25 @@ void VulkanObject::createSSBOs() {
 
 void VulkanObject::createMeshletSSBOs()
 {
-    VkDeviceSize bufferSize = sizeof(meshopt_Meshlet) * dragon_model.getMeshlets().size();
+    const auto createBufferAuto = [this]<typename VectorType>(
+        VkBuffer& vulkan_buffer,
+        VkDeviceMemory& vulkan_buffer_memory,
+        const VectorType& data_vector)
+    {
+        constexpr size_t elementSize = sizeof(VectorType::value_type);
+        const VkDeviceSize bufferSize = elementSize * data_vector.size();
+        createBuffer(
+            bufferSize,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            vulkan_buffer,
+            vulkan_buffer_memory);
+    };
 
-    createBuffer(
-        bufferSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        meshletsSSBO,
-        meshletsSSBOMemory);
-
-    bufferSize = sizeof(unsigned int) * dragon_model.getMeshletVertices().size();
-
-    createBuffer(
-        bufferSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        meshletVerticesSSBO,
-        meshletVerticesSSBOMemory);
-
-    bufferSize = sizeof(unsigned char) * dragon_model.getMeshletIndices().size();
-
-    createBuffer(
-        bufferSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        meshletIndicesSSBO,
-        meshletIndicesSSBOMemory);
-
-    bufferSize = sizeof(Vertex) * dragon_model.getVertices().size();
-
-    createBuffer(
-        bufferSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        verticesSSBO,
-        verticesSSBOMemory);
+    createBufferAuto(meshletsSSBO, meshletsSSBOMemory, dragon_model.getMeshlets());
+    createBufferAuto(meshletVerticesSSBO, meshletVerticesSSBOMemory, dragon_model.getMeshletVertices());
+    createBufferAuto(meshletIndicesSSBO, meshletIndicesSSBOMemory, dragon_model.getMeshletIndices());
+    createBufferAuto(verticesSSBO, verticesSSBOMemory, dragon_model.getVertices());;
 }
 
 void VulkanObject::createIndexBuffer() {
@@ -1449,6 +1433,7 @@ void VulkanObject::createLogicalDevice() {
     featuresMesh.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
     featuresMesh.taskShader = true;
     featuresMesh.meshShader = true;
+    featuresMesh.meshShader = true;
 
     /*VkPhysicalDeviceHostQueryResetFeatures resetFeatures;
     resetFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES;
@@ -1500,6 +1485,47 @@ void VulkanObject::createLogicalDevice() {
         // throw error
         throw std::runtime_error("failed to create logical device!");
     }
+
+    VkPhysicalDeviceMeshShaderPropertiesEXT meshProps{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT };
+
+    VkPhysicalDeviceProperties2 props2{};
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props2.pNext = &meshProps;
+
+    vkGetPhysicalDeviceProperties2(physicalDevice, &props2);
+
+    std::cout << "maxTaskWorkGroupTotalCount: " << meshProps.maxTaskWorkGroupTotalCount << std::endl;
+    std::cout << "maxTaskWorkGroupCount[0]: " << meshProps.maxTaskWorkGroupCount[0] << std::endl;
+    std::cout << "maxTaskWorkGroupCount[1]: " << meshProps.maxTaskWorkGroupCount[1] << std::endl;
+    std::cout << "maxTaskWorkGroupCount[2]: " << meshProps.maxTaskWorkGroupCount[2] << std::endl;
+    std::cout << "maxTaskWorkGroupInvocations: " << meshProps.maxTaskWorkGroupInvocations << std::endl;
+    std::cout << "maxTaskWorkGroupSize[0]: " << meshProps.maxTaskWorkGroupSize[0] << std::endl;
+    std::cout << "maxTaskWorkGroupSize[1]: " << meshProps.maxTaskWorkGroupSize[1] << std::endl;
+    std::cout << "maxTaskWorkGroupSize[2]: " << meshProps.maxTaskWorkGroupSize[2] << std::endl;
+    std::cout << "maxTaskPayloadSize: " << meshProps.maxTaskPayloadSize << std::endl;
+    std::cout << "maxTaskSharedMemorySize: " << meshProps.maxTaskSharedMemorySize << std::endl;
+    std::cout << "maxTaskPayloadAndSharedMemorySize: " << meshProps.maxTaskPayloadAndSharedMemorySize << std::endl;
+    std::cout << "maxMeshWorkGroupTotalCount: " << meshProps.maxMeshWorkGroupTotalCount << std::endl;
+    std::cout << "maxMeshWorkGroupCount[0]: " << meshProps.maxMeshWorkGroupCount[0] << std::endl;
+    std::cout << "maxMeshWorkGroupCount[1]: " << meshProps.maxMeshWorkGroupCount[1] << std::endl;
+    std::cout << "maxMeshWorkGroupCount[2]: " << meshProps.maxMeshWorkGroupCount[2] << std::endl;
+    std::cout << "maxMeshWorkGroupInvocations: " << meshProps.maxMeshWorkGroupInvocations << std::endl;
+    std::cout << "maxMeshWorkGroupSize[0]: " << meshProps.maxMeshWorkGroupSize[0] << std::endl;
+    std::cout << "maxMeshWorkGroupSize[1]: " << meshProps.maxMeshWorkGroupSize[1] << std::endl;
+    std::cout << "maxMeshWorkGroupSize[2]: " << meshProps.maxMeshWorkGroupSize[2] << std::endl;
+    std::cout << "maxMeshSharedMemorySize: " << meshProps.maxMeshSharedMemorySize << std::endl;
+    std::cout << "maxMeshPayloadAndSharedMemorySize: " << meshProps.maxMeshPayloadAndSharedMemorySize << std::endl;
+    std::cout << "maxMeshOutputMemorySize: " << meshProps.maxMeshOutputMemorySize << std::endl;
+    std::cout << "maxMeshPayloadAndOutputMemorySize: " << meshProps.maxMeshPayloadAndOutputMemorySize << std::endl;
+    std::cout << "maxMeshOutputComponents: " << meshProps.maxMeshOutputComponents << std::endl;
+    std::cout << "maxMeshOutputVertices: " << meshProps.maxMeshOutputVertices << std::endl;
+    std::cout << "maxMeshOutputPrimitives: " << meshProps.maxMeshOutputPrimitives << std::endl;
+    std::cout << "maxMeshOutputLayers: " << meshProps.maxMeshOutputLayers << std::endl;
+    std::cout << "maxMeshMultiviewViewCount: " << meshProps.maxMeshMultiviewViewCount << std::endl;
+    std::cout << "meshOutputPerVertexGranularity: " << meshProps.meshOutputPerVertexGranularity << std::endl;
+    std::cout << "meshOutputPerPrimitiveGranularity: " << meshProps.meshOutputPerPrimitiveGranularity << std::endl;
+    std::cout << "maxPreferredTaskWorkGroupInvocations: " << meshProps.maxPreferredTaskWorkGroupInvocations << std::endl;
+    std::cout << "maxPreferredMeshWorkGroupInvocations: " << meshProps.maxPreferredMeshWorkGroupInvocations << std::endl;
 
     VkPhysicalDeviceProperties output_props{};
 
@@ -2155,7 +2181,7 @@ void VulkanObject::createMeshletDescriptorPools() {
 
 void VulkanObject::createMeshletDescriptorSets()
 {
-    /*std::vector<VkDescriptorSetLayout> meshletsMeshLayouts(swapChainImages.size(), meshletGeometryProgram->getSetLayout());
+    std::vector<VkDescriptorSetLayout> meshletsMeshLayouts(swapChainImages.size(), meshletGeometryProgram->getSetLayout());
     VkDescriptorSetAllocateInfo meshletGeometryAllocInfo{};
     meshletGeometryAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     meshletGeometryAllocInfo.descriptorPool = meshletDescriptorPool;
@@ -2167,11 +2193,29 @@ void VulkanObject::createMeshletDescriptorSets()
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 
+    using bufferInfo = std::tuple<uint32_t, VkDescriptorType, std::variant<VkDescriptorBufferInfo*, VkDescriptorImageInfo*>>;
+
+    constexpr auto createDescriptorInfo = []<typename VectorType>(
+        VkBuffer vulkan_buffer,
+        const VectorType & data_vector) -> mc::DescriptorInfo<VkDescriptorBufferInfo>
+    {
+        constexpr size_t elementSize = sizeof(VectorType::value_type);
+        const VkDeviceSize bufferSize = elementSize * data_vector.size();
+        return { vulkan_buffer,
+        0,
+        bufferSize };
+    };
+
     for (size_t i = 0; i < swapChainImages.size(); i++) {
         mc::DescriptorInfo<VkDescriptorBufferInfo> uboInfo{
             uniformBuffers[i],
             0,
             sizeof(UniformBufferObject) };
+
+        mc::DescriptorInfo<VkDescriptorBufferInfo> sphereProjectionDebugSsboInfo{
+           sphereProjectionDebugSSBO[i],
+           0,
+           modelTransforms->modelMatricies.size() * sizeof(glm::vec4) };
 
         mc::DescriptorInfo<VkDescriptorImageInfo> imageInfo{
             textureSampler,
@@ -2183,44 +2227,23 @@ void VulkanObject::createMeshletDescriptorSets()
             0,
             sizeof(ModelTransforms) };
 
-        mc::DescriptorInfo<VkDescriptorBufferInfo> sphereProjectionDebugSsboInfo{
-            sphereProjectionDebugSSBO[i],
-            0,
-            modelTransforms->modelMatricies.size() * sizeof(glm::vec4) };
-
-        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletsInfo{
-            meshletsSSBO,
-            0,
-            sizeof(meshopt_Meshlet) * dragon_model.getMeshlets().size() };
-
-        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletVerticsInfo{
-            meshletVerticesSSBO,
-            0,
-            sizeof(unsigned int) * dragon_model.getMeshletVertices().size() };
-
-        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletIndicesInfo{
-            meshletIndicesSSBO,
-            0,
-            sizeof(unsigned char) * dragon_model.getMeshlets().size() };
-
-        mc::DescriptorInfo<VkDescriptorBufferInfo> verticesInfo{
-            verticesSSBO,
-            0,
-            sizeof(Vertex) * dragon_model.getVertices().size() };
+        auto meshletsInfo = createDescriptorInfo(meshletsSSBO, dragon_model.getMeshlets());
+        auto meshletVerticsInfo = createDescriptorInfo(meshletVerticesSSBO, dragon_model.getMeshletVertices());
+        auto meshletIndicesInfo = createDescriptorInfo(meshletIndicesSSBO, dragon_model.getMeshletIndices());
+        auto verticesInfo = createDescriptorInfo(verticesSSBO, dragon_model.getVertices());
 
         std::array<VkWriteDescriptorSet, 8> meshletGeometryDescriptorWrites{};
 
-        using bufferInfo = std::tuple<uint32_t, VkDescriptorType, std::variant<VkDescriptorBufferInfo*, VkDescriptorImageInfo*>>;
-
         size_t idx = 0;
-        for (const auto& bufferToWrite : { bufferInfo{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uboInfo.getPtr()},
+        for (const auto& bufferToWrite : {
+            bufferInfo{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uboInfo.getPtr()},
             bufferInfo{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageInfo.getPtr()},
             bufferInfo{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, ssboInfo.getPtr()},
             bufferInfo{3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sphereProjectionDebugSsboInfo.getPtr()},
             bufferInfo{4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletsInfo.getPtr()},
             bufferInfo{5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletVerticsInfo.getPtr()},
             bufferInfo{6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletIndicesInfo.getPtr()},
-            bufferInfo{7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, verticesInfo.getPtr()}})
+            bufferInfo{7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, verticesInfo.getPtr()} })
         {
             meshletGeometryDescriptorWrites[idx].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             meshletGeometryDescriptorWrites[idx].dstSet = meshletGeometryDescriptorSets[i];
@@ -2246,7 +2269,7 @@ void VulkanObject::createMeshletDescriptorSets()
             meshletGeometryDescriptorWrites.data(),
             0,
             nullptr);
-    }*/
+    }
 }
 
 void VulkanObject::createLightingDescriptorSets()
@@ -2260,18 +2283,6 @@ void VulkanObject::createLightingDescriptorSets()
 
     lightingDescriptorSets.resize(swapChainImages.size());
     if (vkAllocateDescriptorSets(device, &lightingAllocInfo, lightingDescriptorSets.data()) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate descriptor sets!");
-    }
-
-    std::vector<VkDescriptorSetLayout> meshletsMeshLayouts(swapChainImages.size(), meshletGeometryProgram->getSetLayout());
-    VkDescriptorSetAllocateInfo meshletGeometryAllocInfo{};
-    meshletGeometryAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    meshletGeometryAllocInfo.descriptorPool = meshletDescriptorPool;
-    meshletGeometryAllocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
-    meshletGeometryAllocInfo.pSetLayouts = meshletsMeshLayouts.data();
-
-    meshletGeometryDescriptorSets.resize(swapChainImages.size());
-    if (vkAllocateDescriptorSets(device, &meshletGeometryAllocInfo, meshletGeometryDescriptorSets.data()) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 
@@ -2377,76 +2388,6 @@ void VulkanObject::createLightingDescriptorSets()
         lightingDescriptorWrites[7].pBufferInfo = sphereProjectionDebugSsboInfo.getPtr();
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(lightingDescriptorWrites.size()), lightingDescriptorWrites.data(), 0, nullptr);
-
-        mc::DescriptorInfo<VkDescriptorImageInfo> imageInfo{
-            textureSampler,
-            textureImageView,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-
-        mc::DescriptorInfo<VkDescriptorBufferInfo> ssboInfo{
-            SSBO,
-            0,
-            sizeof(ModelTransforms) };
-
-        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletsInfo{
-            meshletsSSBO,
-            0,
-            sizeof(meshopt_Meshlet) * dragon_model.getMeshlets().size() };
-
-        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletVerticsInfo{
-            meshletVerticesSSBO,
-            0,
-            sizeof(unsigned int) * dragon_model.getMeshletVertices().size() };
-
-        mc::DescriptorInfo<VkDescriptorBufferInfo> meshletIndicesInfo{
-            meshletIndicesSSBO,
-            0,
-            sizeof(unsigned char) * dragon_model.getMeshlets().size() };
-
-        mc::DescriptorInfo<VkDescriptorBufferInfo> verticesInfo{
-            verticesSSBO,
-            0,
-            sizeof(Vertex) * dragon_model.getVertices().size() };
-
-        std::array<VkWriteDescriptorSet, 8> meshletGeometryDescriptorWrites{};
-
-        using bufferInfo = std::tuple<uint32_t, VkDescriptorType, std::variant<VkDescriptorBufferInfo*, VkDescriptorImageInfo*>>;
-
-        size_t idx = 0;
-        for (const auto& bufferToWrite : {
-            bufferInfo{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uboInfo.getPtr()},
-            bufferInfo{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageInfo.getPtr()},
-            bufferInfo{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, ssboInfo.getPtr()},
-            bufferInfo{3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sphereProjectionDebugSsboInfo.getPtr()},
-            bufferInfo{4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletsInfo.getPtr()},
-            bufferInfo{5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletVerticsInfo.getPtr()},
-            bufferInfo{6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshletIndicesInfo.getPtr()},
-            bufferInfo{7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, verticesInfo.getPtr()} })
-        {
-            meshletGeometryDescriptorWrites[idx].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            meshletGeometryDescriptorWrites[idx].dstSet = meshletGeometryDescriptorSets[i];
-            meshletGeometryDescriptorWrites[idx].dstBinding = std::get<0>(bufferToWrite);
-            meshletGeometryDescriptorWrites[idx].dstArrayElement = 0;
-            meshletGeometryDescriptorWrites[idx].descriptorType = std::get<1>(bufferToWrite);
-            meshletGeometryDescriptorWrites[idx].descriptorCount = 1;
-            const auto bufferVariant = std::get<2>(bufferToWrite);
-            if (std::holds_alternative<VkDescriptorBufferInfo*>(bufferVariant))
-            {
-                meshletGeometryDescriptorWrites[idx].pBufferInfo = std::get<VkDescriptorBufferInfo*>(bufferVariant);
-            }
-            else
-            {
-                meshletGeometryDescriptorWrites[idx].pImageInfo = std::get<VkDescriptorImageInfo*>(bufferVariant);
-            }
-            ++idx;
-        }
-
-        vkUpdateDescriptorSets(
-            device,
-            static_cast<uint32_t>(meshletGeometryDescriptorWrites.size()),
-            meshletGeometryDescriptorWrites.data(),
-            0,
-            nullptr);
     }
 }
 
@@ -2967,7 +2908,7 @@ void VulkanObject::createMeshShaderPipeline()
     // set the width of our boundary lines
     rasterizer.lineWidth = 1.0f;
     // we will be culling the back faces
-    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
     // we consider vertex order to be clockwise and front facing
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     // no shadow mapping, no need for depth biasing
@@ -4338,9 +4279,9 @@ void VulkanObject::createMeshletCommandBuffers() {
             renderPassInfo.renderArea.extent = swapChainExtent;
 
             std::array<VkClearValue, 4> clearValues{};
-            clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-            clearValues[1].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-            clearValues[2].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+            clearValues[0].color = { 0.02f, 0.02f, 0.0f, 1.0f };
+            clearValues[1].color = { 0.02f, 0.02f, 0.0f, 1.0f };
+            clearValues[2].color = { 0.02f, 0.02f, 0.0f, 1.0f };
             clearValues[3].depthStencil = { 1.0f, 0 };
 
             renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -4364,9 +4305,8 @@ void VulkanObject::createMeshletCommandBuffers() {
                 nullptr);
 
             // Draw meshlets
-            //vkCmdDrawMeshTasksEXT(commandBuffers[i], dragon_model.getMeshlets().size() * chickenCount, 1, 1);
-
-            vkCmdDrawMeshTasksEXT(commandBuffers[i], dragon_model.getMeshlets().size() * chickenCount, 1, 1);
+            uint32_t numMeshletsToDraw = dragon_model.getMeshlets().size() * chickenCount;
+            vkCmdDrawMeshTasksEXT(commandBuffers[i], numMeshletsToDraw, 1, 1);
 
             vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
 
@@ -5162,25 +5102,23 @@ void VulkanObject::updateSSBO() {
     memcpy(data, zerodVisibility.get(), chickenCount * sizeof(vk::Bool32));
     vkUnmapMemory(device, drawnLastFrameSSBOMemory);
 
-    data = nullptr;
-    vkMapMemory(device, meshletsSSBOMemory, 0, sizeof(meshopt_Meshlet) * dragon_model.getMeshlets().size(), 0, &data);
-    memcpy(data, dragon_model.getMeshlets().data(), sizeof(meshopt_Meshlet) * dragon_model.getMeshlets().size());
-    vkUnmapMemory(device, meshletsSSBOMemory);
+    constexpr auto bufferMeshletData = []<typename VectorType>(
+        VkDevice device,
+        VkDeviceMemory vulkan_buffer,
+        const VectorType& data_vector)
+    {
+        void* data = nullptr;
+        constexpr size_t elementSize = sizeof(VectorType::value_type);
+        const VkDeviceSize bufferSize = elementSize * data_vector.size();
+        vkMapMemory(device, vulkan_buffer, 0, bufferSize, 0, &data);
+        memcpy(data, data_vector.data(), bufferSize);
+        vkUnmapMemory(device, vulkan_buffer);
+    };
 
-    data = nullptr;
-    vkMapMemory(device, meshletVerticesSSBOMemory, 0, sizeof(unsigned int) * dragon_model.getMeshletVertices().size(), 0, &data);
-    memcpy(data, dragon_model.getMeshletVertices().data(), sizeof(unsigned int) * dragon_model.getMeshletVertices().size());
-    vkUnmapMemory(device, meshletVerticesSSBOMemory);
-
-    data = nullptr;
-    vkMapMemory(device, meshletIndicesSSBOMemory, 0, sizeof(unsigned char) * dragon_model.getMeshletIndices().size(), 0, &data);
-    memcpy(data, dragon_model.getMeshletIndices().data(), sizeof(unsigned char) * dragon_model.getMeshletIndices().size());
-    vkUnmapMemory(device, meshletIndicesSSBOMemory);
-
-    data = nullptr;
-    vkMapMemory(device, verticesSSBOMemory, 0, sizeof(Vertex) * dragon_model.getVertices().size(), 0, &data);
-    memcpy(data, dragon_model.getVertices().data(), sizeof(Vertex) * dragon_model.getVertices().size());
-    vkUnmapMemory(device, verticesSSBOMemory);
+    bufferMeshletData(device, meshletsSSBOMemory, dragon_model.getMeshlets());
+    bufferMeshletData(device, meshletVerticesSSBOMemory, dragon_model.getMeshletVertices());
+    bufferMeshletData(device, meshletIndicesSSBOMemory, dragon_model.getMeshletIndices());
+    bufferMeshletData(device, verticesSSBOMemory, dragon_model.getVertices());
 }
 
 void VulkanObject::updateLODSSBO()
@@ -5388,6 +5326,11 @@ bool VulkanObject::checkDeviceExtensionSupport(VkPhysicalDevice device) {
     for (const auto& s : requiredExtensions)
     {
         std::cerr << "|_ " << s << std::endl;
+        if (s == VK_EXT_MESH_SHADER_EXTENSION_NAME)
+        {
+            meshShadingSupported = false;
+        }
+        requiredExtensions.erase(VK_EXT_MESH_SHADER_EXTENSION_NAME);
     }
 
     // return true iff all supported
