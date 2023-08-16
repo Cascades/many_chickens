@@ -59,8 +59,8 @@ layout(std430, binding = 4) readonly buffer IndirectBuffer
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inColor;
-layout(location = 2) in vec2 inTexCoord;
-layout(location = 3) in vec3 inNormal;
+layout(location = 2) in vec3 inNormal;
+layout(location = 3) in vec2 inTexCoord;
 
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec3 outNormal;
@@ -69,7 +69,23 @@ layout(location = 3) out float texture_on;
 layout(location = 4) out float specularity;
 layout(location = 5) flat out uint ID;
 
+mat4 rotationMatrix(vec3 axis, float angle)
+{
+    axis = normalize(axis);
+    float s = sin(angle);
+    float c = cos(angle);
+    float oc = 1.0 - c;
+    
+    return mat4(oc * axis.x * axis.x + c,           oc * axis.x * axis.y - axis.z * s,  oc * axis.z * axis.x + axis.y * s,  0.0,
+                oc * axis.x * axis.y + axis.z * s,  oc * axis.y * axis.y + c,           oc * axis.y * axis.z - axis.x * s,  0.0,
+                oc * axis.z * axis.x - axis.y * s,  oc * axis.y * axis.z + axis.x * s,  oc * axis.z * axis.z + c,           0.0,
+                0.0,                                0.0,                                0.0,                                1.0);
+}
+
 void main() {
+    // TODO: make the chickens spin!
+    //mat4 rotMat = rotationMatrix(normalize(vec3(0.1, 0.2, 0.3)), 25.0);
+
     if (ubo.display_mode == 22)
     {
         gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[indirectBuffer.data[gl_DrawIDARB].meshId] * vec4(normalize(inPosition) * 0.351285, 1.0);

@@ -183,17 +183,31 @@ void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> ca
     createRenderPass();
     createComputePipeline();
 
-    createMeshShaderPipeline();
+    if (meshShadingSupported)
+    {
+        createMeshShaderPipeline();
+    }
 
     // create graphics pipeline
-    //createGraphicsPipeline();
-    createDeferredLightingPipeline();
+    createGraphicsPipeline();
+    if (meshShadingSupported)
+    {
+        createDeferredLightingPipeline(earlyMeshletPass);
+    }
+    createDeferredLightingPipeline(earlyGeometryPass);
     // create our command pool
     createCommandPool();
+    if (meshShadingSupported)
+    {
+        createMeshletCommandPool();
+    }
     createDepthResources();
     // function to create framebuffers and populate swapChainFramebuffers vector
-    createFramebuffers(earlyMeshletPass);
-    //createFramebuffers(earlyGeometryPass);
+    if (meshShadingSupported)
+    {
+        createFramebuffers(earlyMeshletPass);
+    }
+    createFramebuffers(earlyGeometryPass);
 
     createQueryPools();
 
@@ -224,14 +238,23 @@ void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> ca
     createIndexBuffer();
     createUniformBuffers();
     createSSBOs();
-    createMeshletSSBOs();
+    if (meshShadingSupported)
+    {
+        createMeshletSSBOs();
+    }
     updateSSBO();
-    //createDescriptorPool();
+    createDescriptorPool();
     createLightingDescriptorPool();
-    createMeshletDescriptorPools();
-    //createDescriptorSets();
+    if (meshShadingSupported)
+    {
+        createMeshletDescriptorPools();
+    }
+    createDescriptorSets();
     createLightingDescriptorSets();
-    createMeshletDescriptorSets();
+    if (meshShadingSupported)
+    {
+        createMeshletDescriptorSets();
+    }
 
     VkDescriptorPoolSize imgui_pool_sizes[] =
     {
@@ -284,8 +307,11 @@ void VulkanObject::initVulkan(GLFWwindow* window, std::shared_ptr<mc::Camera> ca
     createCommandBuffers(imgui_command_buffers.data(), static_cast<uint32_t>(imgui_command_buffers.size()), imgui_command_pool);
 
     // create command buffers
-    //createCommandBuffers();
-    createMeshletCommandBuffers();
+    createCommandBuffers();
+    if (meshShadingSupported)
+    {
+        createMeshletCommandBuffers();
+    }
     // create and set up semaphores and fences
     createSyncObjects();
 }
@@ -771,6 +797,7 @@ void VulkanObject::createSSBOs() {
 
 void VulkanObject::createMeshletSSBOs()
 {
+    assert(meshShadingSupported);
     const auto createBufferAuto = [this]<typename VectorType>(
         VkBuffer& vulkan_buffer,
         VkDeviceMemory& vulkan_buffer_memory,
@@ -1070,6 +1097,10 @@ void VulkanObject::cleanupSwapChain() {
 
     vkFreeCommandBuffers(device, imgui_command_pool, static_cast<uint32_t>(imgui_command_buffers.size()), imgui_command_buffers.data());
     vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+    if (meshShadingSupported)
+    {
+        vkFreeCommandBuffers(device, meshletCommandPool, static_cast<uint32_t>(meshletCommandBuffers.size()), meshletCommandBuffers.data());
+    }
 
     //destroy pipeline
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
@@ -1114,12 +1145,15 @@ void VulkanObject::cleanupSwapChain() {
     vkDestroyBuffer(device, scaleSSBO, nullptr);
     vkFreeMemory(device, scaleSSBOMemory, nullptr);
 
-    vkDestroyBuffer(device, meshletsSSBO, nullptr);
-    vkFreeMemory(device, meshletsSSBOMemory, nullptr);
-    vkDestroyBuffer(device, meshletVerticesSSBO, nullptr);
-    vkFreeMemory(device, meshletVerticesSSBOMemory, nullptr);
-    vkDestroyBuffer(device, meshletIndicesSSBO, nullptr);
-    vkFreeMemory(device, meshletIndicesSSBOMemory, nullptr);
+    if (meshShadingSupported)
+    {
+        vkDestroyBuffer(device, meshletsSSBO, nullptr);
+        vkFreeMemory(device, meshletsSSBOMemory, nullptr);
+        vkDestroyBuffer(device, meshletVerticesSSBO, nullptr);
+        vkFreeMemory(device, meshletVerticesSSBOMemory, nullptr);
+        vkDestroyBuffer(device, meshletIndicesSSBO, nullptr);
+        vkFreeMemory(device, meshletIndicesSSBOMemory, nullptr);
+    }
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 }
@@ -1429,21 +1463,9 @@ void VulkanObject::createLogicalDevice() {
     vulkan12Features.scalarBlockLayout = true;
     vulkan12Features.hostQueryReset = true;
 
-    VkPhysicalDeviceMeshShaderFeaturesEXT featuresMesh{};
-    featuresMesh.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
-    featuresMesh.taskShader = true;
-    featuresMesh.meshShader = true;
-    featuresMesh.meshShader = true;
-
-    /*VkPhysicalDeviceHostQueryResetFeatures resetFeatures;
-    resetFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES;
-    resetFeatures.hostQueryReset = VK_TRUE;
-    resetFeatures.pNext = nullptr;*/
-
     VkPhysicalDeviceVulkan13Features vulkan13Features{};
     vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     vulkan13Features.maintenance4 = true;
-    //vulkan13Features.synchronization2 = true;
 
     // struct to hold device info
     VkDeviceCreateInfo createInfo{};
@@ -1460,8 +1482,16 @@ void VulkanObject::createLogicalDevice() {
     createInfo.pNext = &vulkan11Features;
     vulkan11Features.pNext = &vulkan12Features;
     vulkan12Features.pNext = &vulkan13Features;
-    vulkan13Features.pNext = &featuresMesh;//&resetFeatures;
-    //vulkan12Features.pNext = &vulkan13Features;
+
+    if (meshShadingSupported)
+    {
+        VkPhysicalDeviceMeshShaderFeaturesEXT featuresMesh{};
+        featuresMesh.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+        featuresMesh.taskShader = true;
+        featuresMesh.meshShader = true;
+
+        vulkan13Features.pNext = &featuresMesh;
+    }
 
     // number of extensions to enable
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
@@ -1486,46 +1516,49 @@ void VulkanObject::createLogicalDevice() {
         throw std::runtime_error("failed to create logical device!");
     }
 
-    VkPhysicalDeviceMeshShaderPropertiesEXT meshProps{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT };
+    if (meshShadingSupported)
+    {
+        VkPhysicalDeviceMeshShaderPropertiesEXT meshProps{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT };
 
-    VkPhysicalDeviceProperties2 props2{};
-    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-    props2.pNext = &meshProps;
+        VkPhysicalDeviceProperties2 props2{};
+        props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        props2.pNext = &meshProps;
 
-    vkGetPhysicalDeviceProperties2(physicalDevice, &props2);
+        vkGetPhysicalDeviceProperties2(physicalDevice, &props2);
 
-    std::cout << "maxTaskWorkGroupTotalCount: " << meshProps.maxTaskWorkGroupTotalCount << std::endl;
-    std::cout << "maxTaskWorkGroupCount[0]: " << meshProps.maxTaskWorkGroupCount[0] << std::endl;
-    std::cout << "maxTaskWorkGroupCount[1]: " << meshProps.maxTaskWorkGroupCount[1] << std::endl;
-    std::cout << "maxTaskWorkGroupCount[2]: " << meshProps.maxTaskWorkGroupCount[2] << std::endl;
-    std::cout << "maxTaskWorkGroupInvocations: " << meshProps.maxTaskWorkGroupInvocations << std::endl;
-    std::cout << "maxTaskWorkGroupSize[0]: " << meshProps.maxTaskWorkGroupSize[0] << std::endl;
-    std::cout << "maxTaskWorkGroupSize[1]: " << meshProps.maxTaskWorkGroupSize[1] << std::endl;
-    std::cout << "maxTaskWorkGroupSize[2]: " << meshProps.maxTaskWorkGroupSize[2] << std::endl;
-    std::cout << "maxTaskPayloadSize: " << meshProps.maxTaskPayloadSize << std::endl;
-    std::cout << "maxTaskSharedMemorySize: " << meshProps.maxTaskSharedMemorySize << std::endl;
-    std::cout << "maxTaskPayloadAndSharedMemorySize: " << meshProps.maxTaskPayloadAndSharedMemorySize << std::endl;
-    std::cout << "maxMeshWorkGroupTotalCount: " << meshProps.maxMeshWorkGroupTotalCount << std::endl;
-    std::cout << "maxMeshWorkGroupCount[0]: " << meshProps.maxMeshWorkGroupCount[0] << std::endl;
-    std::cout << "maxMeshWorkGroupCount[1]: " << meshProps.maxMeshWorkGroupCount[1] << std::endl;
-    std::cout << "maxMeshWorkGroupCount[2]: " << meshProps.maxMeshWorkGroupCount[2] << std::endl;
-    std::cout << "maxMeshWorkGroupInvocations: " << meshProps.maxMeshWorkGroupInvocations << std::endl;
-    std::cout << "maxMeshWorkGroupSize[0]: " << meshProps.maxMeshWorkGroupSize[0] << std::endl;
-    std::cout << "maxMeshWorkGroupSize[1]: " << meshProps.maxMeshWorkGroupSize[1] << std::endl;
-    std::cout << "maxMeshWorkGroupSize[2]: " << meshProps.maxMeshWorkGroupSize[2] << std::endl;
-    std::cout << "maxMeshSharedMemorySize: " << meshProps.maxMeshSharedMemorySize << std::endl;
-    std::cout << "maxMeshPayloadAndSharedMemorySize: " << meshProps.maxMeshPayloadAndSharedMemorySize << std::endl;
-    std::cout << "maxMeshOutputMemorySize: " << meshProps.maxMeshOutputMemorySize << std::endl;
-    std::cout << "maxMeshPayloadAndOutputMemorySize: " << meshProps.maxMeshPayloadAndOutputMemorySize << std::endl;
-    std::cout << "maxMeshOutputComponents: " << meshProps.maxMeshOutputComponents << std::endl;
-    std::cout << "maxMeshOutputVertices: " << meshProps.maxMeshOutputVertices << std::endl;
-    std::cout << "maxMeshOutputPrimitives: " << meshProps.maxMeshOutputPrimitives << std::endl;
-    std::cout << "maxMeshOutputLayers: " << meshProps.maxMeshOutputLayers << std::endl;
-    std::cout << "maxMeshMultiviewViewCount: " << meshProps.maxMeshMultiviewViewCount << std::endl;
-    std::cout << "meshOutputPerVertexGranularity: " << meshProps.meshOutputPerVertexGranularity << std::endl;
-    std::cout << "meshOutputPerPrimitiveGranularity: " << meshProps.meshOutputPerPrimitiveGranularity << std::endl;
-    std::cout << "maxPreferredTaskWorkGroupInvocations: " << meshProps.maxPreferredTaskWorkGroupInvocations << std::endl;
-    std::cout << "maxPreferredMeshWorkGroupInvocations: " << meshProps.maxPreferredMeshWorkGroupInvocations << std::endl;
+        std::cout << "maxTaskWorkGroupTotalCount: " << meshProps.maxTaskWorkGroupTotalCount << std::endl;
+        std::cout << "maxTaskWorkGroupCount[0]: " << meshProps.maxTaskWorkGroupCount[0] << std::endl;
+        std::cout << "maxTaskWorkGroupCount[1]: " << meshProps.maxTaskWorkGroupCount[1] << std::endl;
+        std::cout << "maxTaskWorkGroupCount[2]: " << meshProps.maxTaskWorkGroupCount[2] << std::endl;
+        std::cout << "maxTaskWorkGroupInvocations: " << meshProps.maxTaskWorkGroupInvocations << std::endl;
+        std::cout << "maxTaskWorkGroupSize[0]: " << meshProps.maxTaskWorkGroupSize[0] << std::endl;
+        std::cout << "maxTaskWorkGroupSize[1]: " << meshProps.maxTaskWorkGroupSize[1] << std::endl;
+        std::cout << "maxTaskWorkGroupSize[2]: " << meshProps.maxTaskWorkGroupSize[2] << std::endl;
+        std::cout << "maxTaskPayloadSize: " << meshProps.maxTaskPayloadSize << std::endl;
+        std::cout << "maxTaskSharedMemorySize: " << meshProps.maxTaskSharedMemorySize << std::endl;
+        std::cout << "maxTaskPayloadAndSharedMemorySize: " << meshProps.maxTaskPayloadAndSharedMemorySize << std::endl;
+        std::cout << "maxMeshWorkGroupTotalCount: " << meshProps.maxMeshWorkGroupTotalCount << std::endl;
+        std::cout << "maxMeshWorkGroupCount[0]: " << meshProps.maxMeshWorkGroupCount[0] << std::endl;
+        std::cout << "maxMeshWorkGroupCount[1]: " << meshProps.maxMeshWorkGroupCount[1] << std::endl;
+        std::cout << "maxMeshWorkGroupCount[2]: " << meshProps.maxMeshWorkGroupCount[2] << std::endl;
+        std::cout << "maxMeshWorkGroupInvocations: " << meshProps.maxMeshWorkGroupInvocations << std::endl;
+        std::cout << "maxMeshWorkGroupSize[0]: " << meshProps.maxMeshWorkGroupSize[0] << std::endl;
+        std::cout << "maxMeshWorkGroupSize[1]: " << meshProps.maxMeshWorkGroupSize[1] << std::endl;
+        std::cout << "maxMeshWorkGroupSize[2]: " << meshProps.maxMeshWorkGroupSize[2] << std::endl;
+        std::cout << "maxMeshSharedMemorySize: " << meshProps.maxMeshSharedMemorySize << std::endl;
+        std::cout << "maxMeshPayloadAndSharedMemorySize: " << meshProps.maxMeshPayloadAndSharedMemorySize << std::endl;
+        std::cout << "maxMeshOutputMemorySize: " << meshProps.maxMeshOutputMemorySize << std::endl;
+        std::cout << "maxMeshPayloadAndOutputMemorySize: " << meshProps.maxMeshPayloadAndOutputMemorySize << std::endl;
+        std::cout << "maxMeshOutputComponents: " << meshProps.maxMeshOutputComponents << std::endl;
+        std::cout << "maxMeshOutputVertices: " << meshProps.maxMeshOutputVertices << std::endl;
+        std::cout << "maxMeshOutputPrimitives: " << meshProps.maxMeshOutputPrimitives << std::endl;
+        std::cout << "maxMeshOutputLayers: " << meshProps.maxMeshOutputLayers << std::endl;
+        std::cout << "maxMeshMultiviewViewCount: " << meshProps.maxMeshMultiviewViewCount << std::endl;
+        std::cout << "meshOutputPerVertexGranularity: " << meshProps.meshOutputPerVertexGranularity << std::endl;
+        std::cout << "meshOutputPerPrimitiveGranularity: " << meshProps.meshOutputPerPrimitiveGranularity << std::endl;
+        std::cout << "maxPreferredTaskWorkGroupInvocations: " << meshProps.maxPreferredTaskWorkGroupInvocations << std::endl;
+        std::cout << "maxPreferredMeshWorkGroupInvocations: " << meshProps.maxPreferredMeshWorkGroupInvocations << std::endl;
+    }
 
     VkPhysicalDeviceProperties output_props{};
 
@@ -1905,19 +1938,19 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
     // this is our subpass
     dependencies[0].dstSubpass = 0;
     // the operation to wait on before we can use image
-    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT;
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     // no mask
     dependencies[0].srcAccessMask = 0;
     // operations which should wait on this subpass are the colour attachment
-    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     // implicit subpass before render pass
     dependencies[1].srcSubpass = 0;
     // this is our subpass
     dependencies[1].dstSubpass = 1;
-    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT;
-    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
     dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
@@ -1942,8 +1975,11 @@ void VulkanObject::createGeometryPass(bool const clearAttachmentsOnLoad, VkRende
 
 void VulkanObject::createEarlyGeometryPass()
 {
-    //createGeometryPass(true, earlyGeometryPass);
-    createGeometryPass(true, earlyMeshletPass);
+    createGeometryPass(true, earlyGeometryPass);
+    if (meshShadingSupported)
+    {
+        createGeometryPass(true, earlyMeshletPass);
+    }
 }
 void VulkanObject::createLateGeometryPass()
 {
@@ -2108,13 +2144,23 @@ void VulkanObject::recreateSwapChain() {
     createRenderPass();
     createComputePipeline();
     // create graphics pipeline
-    createMeshShaderPipeline();
-    //createGraphicsPipeline();
-    createDeferredLightingPipeline();
+    if (meshShadingSupported)
+    {
+        createMeshShaderPipeline();
+    }
+    createGraphicsPipeline();
+    if (meshShadingSupported)
+    {
+        createDeferredLightingPipeline(earlyMeshletPass);
+    }
+    createDeferredLightingPipeline(earlyGeometryPass);
     createDepthResources();
     // create framebuffers
-    createFramebuffers(earlyMeshletPass);
-    //createFramebuffers(earlyGeometryPass);
+    if (meshShadingSupported)
+    {
+        createFramebuffers(earlyMeshletPass);
+    }
+    createFramebuffers(earlyGeometryPass);
 
     imgui_frame_buffers.resize(swapChainImages.size());
 
@@ -2137,10 +2183,17 @@ void VulkanObject::recreateSwapChain() {
 
     createUniformBuffers();
     createSSBOs();
-    createMeshletSSBOs();
+    if (meshShadingSupported)
+    {
+        createMeshletSSBOs();
+    }
     updateSSBO();
     createLightingDescriptorPool();
-    //createDescriptorPool();
+    createDescriptorPool();
+    if (meshShadingSupported)
+    {
+        createMeshletDescriptorPools();
+    }
 
     ImGui_ImplVulkan_SetMinImageCount(static_cast<uint32_t>(swapChainImages.size()));
 
@@ -2152,14 +2205,22 @@ void VulkanObject::recreateSwapChain() {
     imgui_command_buffers.resize(swapChainImageViews.size());
     createCommandBuffers(imgui_command_buffers.data(), static_cast<uint32_t>(imgui_command_buffers.size()), imgui_command_pool);
 
-    //createDescriptorSets();
+    createDescriptorSets();
     createLightingDescriptorSets();
+    if (meshShadingSupported)
+    {
+        createMeshletDescriptorSets();
+    }
     // create command buffers
-    //createCommandBuffers();
-    createMeshletCommandBuffers();
+    createCommandBuffers();
+    if (meshShadingSupported)
+    {
+        createMeshletCommandBuffers();
+    }
 }
 
 void VulkanObject::createMeshletDescriptorPools() {
+    assert(meshShadingSupported);
     std::array<VkDescriptorPoolSize, 3> meshletPoolSizes{};
     meshletPoolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     meshletPoolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
@@ -2181,6 +2242,7 @@ void VulkanObject::createMeshletDescriptorPools() {
 
 void VulkanObject::createMeshletDescriptorSets()
 {
+    assert(meshShadingSupported);
     std::vector<VkDescriptorSetLayout> meshletsMeshLayouts(swapChainImages.size(), meshletGeometryProgram->getSetLayout());
     VkDescriptorSetAllocateInfo meshletGeometryAllocInfo{};
     meshletGeometryAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -2425,18 +2487,6 @@ void VulkanObject::createDescriptorSets() {
 
     descriptorSets.resize(swapChainImages.size());
     if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate descriptor sets!");
-    }
-
-    std::vector<VkDescriptorSetLayout> lightingLayouts(swapChainImages.size(), lightingProgram->getSetLayout());
-    VkDescriptorSetAllocateInfo lightingAllocInfo{};
-    lightingAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    lightingAllocInfo.descriptorPool = lightingDescriptorPool;
-    lightingAllocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
-    lightingAllocInfo.pSetLayouts = lightingLayouts.data();
-
-    lightingDescriptorSets.resize(swapChainImages.size());
-    if (vkAllocateDescriptorSets(device, &lightingAllocInfo, lightingDescriptorSets.data()) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 
@@ -2696,71 +2746,6 @@ void VulkanObject::createDescriptorSets() {
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
-        std::array<VkWriteDescriptorSet, 8> lightingDescriptorWrites{};
-
-        lightingDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        lightingDescriptorWrites[0].dstSet = lightingDescriptorSets[i];
-        lightingDescriptorWrites[0].dstBinding = 0;
-        lightingDescriptorWrites[0].dstArrayElement = 0;
-        lightingDescriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        lightingDescriptorWrites[0].descriptorCount = 1;
-        lightingDescriptorWrites[0].pBufferInfo = uboInfo.getPtr();
-
-        lightingDescriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        lightingDescriptorWrites[1].dstSet = lightingDescriptorSets[i];
-        lightingDescriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-        lightingDescriptorWrites[1].descriptorCount = 1;
-        lightingDescriptorWrites[1].dstBinding = 1;
-        lightingDescriptorWrites[1].pImageInfo = colorDescriptorInfo.getPtr();
-
-        lightingDescriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        lightingDescriptorWrites[2].dstSet = lightingDescriptorSets[i];
-        lightingDescriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-        lightingDescriptorWrites[2].descriptorCount = 1;
-        lightingDescriptorWrites[2].dstBinding = 2;
-        lightingDescriptorWrites[2].pImageInfo = normalDescriptorInfo.getPtr();
-
-        lightingDescriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        lightingDescriptorWrites[3].dstSet = lightingDescriptorSets[i];
-        lightingDescriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-        lightingDescriptorWrites[3].descriptorCount = 1;
-        lightingDescriptorWrites[3].dstBinding = 4;
-        lightingDescriptorWrites[3].pImageInfo = depthDescriptorInfo.getPtr();
-
-        lightingDescriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        lightingDescriptorWrites[4].dstSet = lightingDescriptorSets[i];
-        lightingDescriptorWrites[4].dstBinding = 5;
-        lightingDescriptorWrites[4].dstArrayElement = 0;
-        lightingDescriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        lightingDescriptorWrites[4].descriptorCount = 1;
-        lightingDescriptorWrites[4].pImageInfo = shadowImageInfo.getPtr();
-
-        lightingDescriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        lightingDescriptorWrites[5].dstSet = lightingDescriptorSets[i];
-        lightingDescriptorWrites[5].dstBinding = 6;
-        lightingDescriptorWrites[5].dstArrayElement = 0;
-        lightingDescriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        lightingDescriptorWrites[5].descriptorCount = 1;
-        lightingDescriptorWrites[5].pImageInfo = PCFShadowImageInfo.getPtr();
-
-        lightingDescriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        lightingDescriptorWrites[6].dstSet = lightingDescriptorSets[i];
-        lightingDescriptorWrites[6].dstBinding = 7;
-        lightingDescriptorWrites[6].dstArrayElement = 0;
-        lightingDescriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        lightingDescriptorWrites[6].descriptorCount = 1;
-        lightingDescriptorWrites[6].pImageInfo = depthMultiMipDescriptorInfo.getPtr();
-
-        lightingDescriptorWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        lightingDescriptorWrites[7].dstSet = lightingDescriptorSets[i];
-        lightingDescriptorWrites[7].dstBinding = 8;
-        lightingDescriptorWrites[7].dstArrayElement = 0;
-        lightingDescriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        lightingDescriptorWrites[7].descriptorCount = 1;
-        lightingDescriptorWrites[7].pBufferInfo = sphereProjectionDebugSsboInfo.getPtr();
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(lightingDescriptorWrites.size()), lightingDescriptorWrites.data(), 0, nullptr);
-
         std::array<VkWriteDescriptorSet, 1> shadowDescriptorWrites{};
 
         shadowDescriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2816,6 +2801,7 @@ void VulkanObject::createComputePipeline()
 
 void VulkanObject::createMeshShaderPipeline()
 {
+    assert(meshShadingSupported);
     auto geometryMeshShaderModule = std::make_shared<mc::Shader>(
         device,
         "../shaders/vulkan3/meshlet_mesh.spv",
@@ -2996,7 +2982,7 @@ void VulkanObject::createMeshShaderPipeline()
     }
 }
 
-void VulkanObject::createDeferredLightingPipeline()
+void VulkanObject::createDeferredLightingPipeline(VkRenderPass& renderPass)
 {
     // create shader module per shader
     auto lightingVertShaderModule = std::make_shared< mc::Shader>(device, "../shaders/vulkan3/lighting_pass_vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
@@ -3150,7 +3136,7 @@ void VulkanObject::createDeferredLightingPipeline()
     // assign layout (for passing uniforms)
     pipelineInfo.layout = lightingProgram->getLayout();
     // assign renderpass
-    pipelineInfo.renderPass = earlyMeshletPass;
+    pipelineInfo.renderPass = renderPass;
     // number of subpasses
     pipelineInfo.subpass = 1;
     // we wont fail, so NULL
@@ -3521,7 +3507,7 @@ void VulkanObject::createFramebuffers(VkRenderPass& renderPass) {
         // type of struct
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         // specify our render pass data
-        framebufferInfo.renderPass = renderPass;//earlyMeshletPass;//earlyGeometryPass;
+        framebufferInfo.renderPass = renderPass;
         // our attament count
         framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
         // our attachment
@@ -3585,6 +3571,26 @@ void VulkanObject::createCommandPool() {
     // create command pool
     // if fails
     if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+        // throws error
+        throw std::runtime_error("failed to create command pool!");
+    }
+}
+
+void VulkanObject::createMeshletCommandPool() {
+    assert(meshShadingSupported);
+    // find qeues we can execute commands through
+    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+
+    // struct to contain command pool info
+    VkCommandPoolCreateInfo poolInfo{};
+    // type of struct
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    // index for our graphics queue to run graphics commands
+    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+    // create command pool
+    // if fails
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &meshletCommandPool) != VK_SUCCESS) {
         // throws error
         throw std::runtime_error("failed to create command pool!");
     }
@@ -4188,23 +4194,24 @@ void VulkanObject::createCommandBuffers() {
 
 // create command buffers
 void VulkanObject::createMeshletCommandBuffers() {
+    assert(meshShadingSupported);
     // resize vector to store all command buffers
-    commandBuffers.resize(swapChainFramebuffers.size());
+    meshletCommandBuffers.resize(swapChainFramebuffers.size());
 
     // struct to specify how to generate command buffers and fill command pool
     VkCommandBufferAllocateInfo allocInfo{};
     // struct type
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     // specify our command pool for storage
-    allocInfo.commandPool = commandPool;
+    allocInfo.commandPool = meshletCommandPool;
     // can be submitted to a queue directly
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     // number of command buffers to generate
-    allocInfo.commandBufferCount = (uint32_t)commandBuffers.size();
+    allocInfo.commandBufferCount = (uint32_t)meshletCommandBuffers.size();
 
     // create command buffers
     // if fails
-    if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
+    if (vkAllocateCommandBuffers(device, &allocInfo, meshletCommandBuffers.data()) != VK_SUCCESS) {
         // throw error
         throw std::runtime_error("failed to allocate command buffers!");
     }
@@ -4219,7 +4226,7 @@ void VulkanObject::createMeshletCommandBuffers() {
     PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT = (PFN_vkCmdDrawMeshTasksEXT)vkGetInstanceProcAddr(instance, "vkCmdDrawMeshTasksEXT");
 
     // for each command buffer generated
-    for (size_t i = 0; i < commandBuffers.size(); i++) {
+    for (size_t i = 0; i < meshletCommandBuffers.size(); i++) {
         uint32_t queryPoolIndex = 0;
 
         auto beginLableRegion = [&](std::string_view labelName, std::span<float, 4> color)
@@ -4239,7 +4246,7 @@ void VulkanObject::createMeshletCommandBuffers() {
             label.color[1] = color[1];
             label.color[2] = color[2];
             label.color[3] = color[3];
-            pfnCmdBeginDebugUtilsLabelEXT(commandBuffers[i], &label);
+            pfnCmdBeginDebugUtilsLabelEXT(meshletCommandBuffers[i], &label);
         };
 
         auto endLableRegion = [&]()
@@ -4251,7 +4258,7 @@ void VulkanObject::createMeshletCommandBuffers() {
                 return;
             }
 
-            pfnCmdEndDebugUtilsLabelEXT(commandBuffers[i]);
+            pfnCmdEndDebugUtilsLabelEXT(meshletCommandBuffers[i]);
         };
 
         // specify some info about the usage of this command buffer
@@ -4261,12 +4268,12 @@ void VulkanObject::createMeshletCommandBuffers() {
 
         // create initial command buffer
         // if fails
-        if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
+        if (vkBeginCommandBuffer(meshletCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
             // throw error
             throw std::runtime_error("failed to begin recording command buffer!");
         }
 
-        vkCmdResetQueryPool(commandBuffers[i], queryPools[i], 0, 50);
+        vkCmdResetQueryPool(meshletCommandBuffers[i], queryPools[i], 0, 50);
 
         {
             std::array<float, 4> labelCol = { 0.4f, 0.4f, 1.0f, 1.0f };
@@ -4288,14 +4295,14 @@ void VulkanObject::createMeshletCommandBuffers() {
             renderPassInfo.pClearValues = clearValues.data();
 
             earlyRenderQueryIndices.first = queryPoolIndex;
-            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+            vkCmdWriteTimestamp(meshletCommandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
 
-            vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdBeginRenderPass(meshletCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, meshGeometryPipeline);
+            vkCmdBindPipeline(meshletCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, meshGeometryPipeline);
 
             vkCmdBindDescriptorSets(
-                commandBuffers[i],
+                meshletCommandBuffers[i],
                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                 meshletGeometryProgram->getLayout(),
                 0,
@@ -4306,26 +4313,26 @@ void VulkanObject::createMeshletCommandBuffers() {
 
             // Draw meshlets
             uint32_t numMeshletsToDraw = dragon_model.getMeshlets().size() * chickenCount;
-            vkCmdDrawMeshTasksEXT(commandBuffers[i], numMeshletsToDraw, 1, 1);
+            vkCmdDrawMeshTasksEXT(meshletCommandBuffers[i], numMeshletsToDraw, 1, 1);
 
-            vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdNextSubpass(meshletCommandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);
 
-            vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline);
+            vkCmdBindPipeline(meshletCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline);
 
-            vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingProgram->getLayout(), 0, 1, &lightingDescriptorSets[i], 0, nullptr);
+            vkCmdBindDescriptorSets(meshletCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, lightingProgram->getLayout(), 0, 1, &lightingDescriptorSets[i], 0, nullptr);
 
-            vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+            vkCmdDraw(meshletCommandBuffers[i], 3, 1, 0, 0);
 
-            vkCmdEndRenderPass(commandBuffers[i]);
+            vkCmdEndRenderPass(meshletCommandBuffers[i]);
 
             earlyRenderQueryIndices.second = queryPoolIndex;
-            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
+            vkCmdWriteTimestamp(meshletCommandBuffers[i], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPools[i], queryPoolIndex); ++queryPoolIndex;
 
             endLableRegion();
         }
 
         vkCmdPipelineBarrier(
-            commandBuffers[i],
+            meshletCommandBuffers[i],
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             VK_DEPENDENCY_BY_REGION_BIT,
@@ -4338,7 +4345,7 @@ void VulkanObject::createMeshletCommandBuffers() {
 
         // finish recording commands
         // if fails
-        if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+        if (vkEndCommandBuffer(meshletCommandBuffers[i]) != VK_SUCCESS) {
             // throw error
             throw std::runtime_error("failed to record command buffer!");
         }
@@ -4415,6 +4422,7 @@ void VulkanObject::drawFrame() {
 
     ImGuiColorEditFlags flags = ImGuiColorEditFlags_DisplayRGB;
 
+    ImGui::Checkbox("meshletPipeline", &meshletPipelineOn);
     ImGui::Checkbox("model", &model_stage_on);
     ImGui::Checkbox("texture", &texture_stage_on);
     ImGui::Checkbox("lighting", &lighting_stage_on);
@@ -4868,7 +4876,17 @@ void VulkanObject::drawFrame() {
     endLableRegion();
     vkEndCommandBuffer(imgui_command_buffers[imageIndex]);
 
-    std::array<VkCommandBuffer, 2> submitCommandBuffers = { commandBuffers[imageIndex], imgui_command_buffers[imageIndex] };
+    std::array<VkCommandBuffer, 2> submitCommandBuffers{};
+    if (meshShadingSupported && meshletPipelineOn)
+    {
+        submitCommandBuffers[0] = meshletCommandBuffers[imageIndex];
+    }
+    else
+    {
+        meshletPipelineOn = false;
+        submitCommandBuffers[0] = commandBuffers[imageIndex];
+    }
+    submitCommandBuffers[1] = imgui_command_buffers[imageIndex];
     // struct to hold info about queue submissions
     VkSubmitInfo submitInfo{};
     // assign type
@@ -5115,10 +5133,13 @@ void VulkanObject::updateSSBO() {
         vkUnmapMemory(device, vulkan_buffer);
     };
 
-    bufferMeshletData(device, meshletsSSBOMemory, dragon_model.getMeshlets());
-    bufferMeshletData(device, meshletVerticesSSBOMemory, dragon_model.getMeshletVertices());
-    bufferMeshletData(device, meshletIndicesSSBOMemory, dragon_model.getMeshletIndices());
-    bufferMeshletData(device, verticesSSBOMemory, dragon_model.getVertices());
+    if (meshShadingSupported)
+    {
+        bufferMeshletData(device, meshletsSSBOMemory, dragon_model.getMeshlets());
+        bufferMeshletData(device, meshletVerticesSSBOMemory, dragon_model.getMeshletVertices());
+        bufferMeshletData(device, meshletIndicesSSBOMemory, dragon_model.getMeshletIndices());
+        bufferMeshletData(device, verticesSSBOMemory, dragon_model.getVertices());
+    }
 }
 
 void VulkanObject::updateLODSSBO()

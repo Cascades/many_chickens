@@ -1,0 +1,141 @@
+#version 450
+
+#extension GL_EXT_shader_16bit_storage: require
+#extension GL_EXT_shader_8bit_storage: require
+#extension GL_EXT_mesh_shader: require
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(triangles, max_vertices = 64, max_primitives = 64) out;
+
+layout(std140, binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+    mat4 culling_model;
+    mat4 culling_view;
+    mat4 culling_proj;
+    mat4 light;
+    mat4 lightVP;
+	vec4 Ka;
+	vec4 Kd;
+	vec4 Ks;
+	vec4 Ke;
+    vec2 win_dim;
+    float Ns;
+	float model_stage_on;
+	float texture_stage_on;
+	float lighting_stage_on;
+    float pcf_on;
+    float specular;
+	float diffuse;
+	float ambient;
+    float shadow_bias;
+    float p00;
+	float p11;
+    float culling_p00;
+	float culling_p11;
+	float zNear;
+	int display_mode;
+    int culling_updating;
+} ubo;
+
+layout(std140, binding = 2) readonly buffer ModelTranformsBuffer
+{
+	mat4 data[];
+} modelTranformsBuffer;
+
+struct Meshlet
+{
+    uint vertex_offset;
+	uint triangle_offset;
+	uint vertex_count;
+	uint triangle_count;
+};
+
+struct Vertex
+{
+    vec4 pos;
+    vec4 color;
+    vec4 norm;
+    vec2 texCoord;
+};
+
+layout(std430, binding = 4) readonly buffer Meshlets
+{
+	Meshlet data[];
+} meshlets;
+
+layout(std430, binding = 5) readonly buffer MeshletVertics
+{
+	uint data[];
+} meshletVertics;
+
+layout(std430, binding = 6) readonly buffer MeshletIndices
+{
+	uint8_t data[];
+} meshletIndices;
+
+layout(std430, binding = 7) readonly buffer Vertices
+{
+	Vertex data[];
+} vertices;
+
+layout(location = 0) out vec4 outColor[];
+layout(location = 1) out vec3 outNormal[];
+layout(location = 2) out vec2 outTexCoord[];
+layout(location = 3) out float outTextureOn[];
+layout(location = 4) out float outSpecularity[];
+layout(location = 5) flat out uint outID[];
+
+uint hash(uint a)
+{
+   a = (a+0x7ed55d16) + (a<<12);
+   a = (a^0xc761c23c) ^ (a>>19);
+   a = (a+0x165667b1) + (a<<5);
+   a = (a+0xd3a2646c) ^ (a<<9);
+   a = (a+0xfd7046c5) + (a<<3);
+   a = (a^0xb55a4f09) ^ (a>>16);
+   return a;
+}
+
+void main()
+{
+    uint meshletIdx = gl_WorkGroupID.x % 892;
+
+    uint meshID = gl_WorkGroupID.x / 892;
+
+    Meshlet meshlet = meshlets.data[meshletIdx];
+
+    SetMeshOutputsEXT(meshlet.vertex_count, meshlet.triangle_count);
+
+    uint idx = gl_LocalInvocationID.x;
+
+    if (idx < meshlet.vertex_count)
+    {
+
+        uint vertIdx = meshletVertics.data[meshlet.vertex_offset + idx];
+
+        Vertex vertex = vertices.data[vertIdx];
+
+        gl_MeshVerticesEXT[idx].gl_Position = ubo.proj * ubo.view * modelTranformsBuffer.data[meshID] * vertex.pos;
+        
+        uint mhash = hash(meshletIdx);
+        vec3 mcolor = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
+
+        outColor[idx] = vec4(mcolor, 1.0);
+        outNormal[idx] = vertex.norm.xyz;
+        outTexCoord[idx] = vertex.texCoord;
+        outTextureOn[idx] = ubo.texture_stage_on;
+        outSpecularity[idx] = ubo.specular;
+        outID[idx] = meshID;
+    }
+
+    if (idx < meshlet.triangle_count)
+    {
+        uint meshletTriangleVertIdx0 = uint(meshletIndices.data[meshlet.triangle_offset + idx * 3]);
+        uint meshletTriangleVertIdx1 = uint(meshletIndices.data[meshlet.triangle_offset + idx * 3 + 1]);
+        uint meshletTriangleVertIdx2 = uint(meshletIndices.data[meshlet.triangle_offset + idx * 3 + 2]);
+
+        gl_PrimitiveTriangleIndicesEXT[idx] = uvec3(meshletTriangleVertIdx0, meshletTriangleVertIdx1, meshletTriangleVertIdx2);
+    }
+}

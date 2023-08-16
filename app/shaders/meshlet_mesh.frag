@@ -1,17 +1,15 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-layout(location = 0) in vec3 fragColor;
-layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec2 fragTexCoord;
-layout(location = 3) in flat float texture_on;
-layout(location = 4) in float specularity;
-layout(location = 5) flat in uint ID;
+layout(location = 0) in vec4 fragColor;
+//layout(location = 1) in vec3 inNormal;
+//layout(location = 2) in vec2 fragTexCoord;
+//layout(location = 3) in flat float texture_on;
+//layout(location = 4) in float specularity;
+//layout(location = 5) flat in uint ID;
 
 layout(location = 0) out vec4 outColor;
-layout(location = 1) out vec4 outNormal;
-
-layout(binding = 1) uniform sampler2D texSampler;
+//layout(location = 1) out vec4 outNormal;
 
 layout(std140, binding = 0) uniform UniformBufferObject {
     mat4 model;
@@ -45,6 +43,8 @@ layout(std140, binding = 0) uniform UniformBufferObject {
     int culling_updating;
 } ubo;
 
+layout(binding = 1) uniform sampler2D texSampler;
+
 struct SphereProjectionDebugData
 {
     vec4 projectedAABB;
@@ -57,7 +57,10 @@ layout(std430, binding = 3) buffer SphereProjectionDebugBuffer
 } sphereProjectionDebugBuffer;
 
 void main() {
-    if (ubo.display_mode == 23)
+    outColor = fragColor;
+    //outNormal = vec4(0.0, 1.0, 0.0, 1.0);
+
+    /* if (ubo.display_mode == 23)
     {
         //outColor = vec4(vec3(float(sphereProjectionDebugBuffer.data[ID].lodLevel + 1) / 10.0), 1.0);
     }
@@ -76,12 +79,12 @@ void main() {
     if (sphereProjectionDebugBuffer.data.length() < 6)
     {
         vec4 abc[5] = vec4[](vec4(1.0, 0.0, 0.0, 1.0), vec4(0.0, 1.0, 0.0, 1.0), vec4(0.0, 0.0, 1.0, 1.0), vec4(1.0, 1.0, 0.0, 1.0), vec4(0.0, 1.0, 1.0, 1.0));
-        outNormal.rgb = abc[ID].rgb;
+        //outNormal.rgb = abc[ID].rgb;
     }
     else
     {
         outNormal.rgb = normalize(inNormal) * 0.5 + vec3(0.5);
     }
 
-    outColor.a = specularity;
+    outColor.a = specularity;*/
 }

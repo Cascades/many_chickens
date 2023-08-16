@@ -157,6 +157,10 @@ private:
     // vector of command buffers. One for each image in swap chain
     std::vector<VkCommandBuffer> commandBuffers;
 
+    VkCommandPool meshletCommandPool;
+    // vector of command buffers. One for each image in swap chain
+    std::vector<VkCommandBuffer> meshletCommandBuffers;
+
     VkCommandPool imgui_command_pool;
     std::vector<VkCommandBuffer> imgui_command_buffers;
 
@@ -280,6 +284,7 @@ private:
 
     bool updatingImGuiQueryData = true;
 
+    bool meshletPipelineOn = true;
     bool model_stage_on = false;
     bool texture_stage_on = false;
     bool lighting_stage_on = false;
@@ -410,7 +415,7 @@ private:
 
     void createComputePipeline();
 
-    void createDeferredLightingPipeline();
+    void createDeferredLightingPipeline(VkRenderPass& renderPass);
 
     // create the graphics pipeline.
     void createGraphicsPipeline();
@@ -422,6 +427,7 @@ private:
 
     // create our command pool
     void createCommandPool();
+    void createMeshletCommandPool();
 
     // create command buffers
     void createCommandBuffers();
